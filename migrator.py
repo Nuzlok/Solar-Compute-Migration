@@ -147,10 +147,17 @@ def migrateProcessToAvaliableNode(processID, process):
         checkpointAndMigrateProcessToNode(processID, process, ipToSend)
 
 
-def getProcessID() -> int:
+def getProcessID(proc) -> int:
     # *Get process ID from process*
     return 0
 
+def criuDump(proc) -> bool:
+    result = subprocess.check_output(['sudo', 'criu', 'dump', '-t', f'$(pgrep {proc})', '-v4', '-o', 'output.log', '&&', 'echo', 'OK'])
+    return result == "OK"
+
+def criuRestore(path) -> bool:
+    result = subprocess.check_output(['sudo', 'criu', 'restore', '-d', '-v4', '-o', 'restore.log', '&&', 'echo', 'OK'])
+    return result == "OK"
 
 def sendProcessResultsToUser():
     pass
