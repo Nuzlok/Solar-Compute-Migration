@@ -104,7 +104,6 @@ def pollNodeforState(address) -> str:
     statefromNode = "idle"
     return statefromNode
 
-
 def waitForProcessCMD():
     # #Check specified directory for files
     # Process = (check directory, if not empty, then it should contain a process and checkpoint)
