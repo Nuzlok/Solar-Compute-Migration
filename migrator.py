@@ -75,15 +75,18 @@ def NetworkScan() -> None:
     global nodeIPaddrs
     #import netifaces
     selfIP = socket.gethostbyname(socket.gethostname())
+    selfIP_subnet = selfIP.split(".")[3]
+    # gatewayIP = "192.168.137.xxx"
     for i in range(1, 255):
+        if i == selfIP_subnet: continue
+        # if i == gatewayIP: continue
         ip = "192.168.137." + str(i)
         response = os.system("ping -c 1 " + ip)
-        if response == 0:
-            nodeIPaddrs.append(ip)
+        if response == 0: nodeIPaddrs.append(ip)
     # incomplete
 
 
-def manualInput() -> bool:
+def manualInput(input) -> bool:
     """Handle manual input from user"""
     return False
 
@@ -148,7 +151,8 @@ def migrateProcessToAvaliableNode(processID, process):
 
 def getProcessID(proc) -> int:
     # *Get process ID from process*
-    return 0
+    # pid = subprocess.check_output(['pidof', 'f{proc}'])
+    return 0 # pid
 
 def criuDump(proc) -> bool:
     result = subprocess.check_output(['sudo', 'criu', 'dump', '-t', f'$(pgrep {proc})', '-v4', '-o', 'output.log', '&&', 'echo', 'OK'])
@@ -159,39 +163,43 @@ def criuRestore(path) -> bool:
     return result == "OK"
 
 def sendProcessResultsToUser():
+    # os.system("scp .....")
+    # os.system("ssh to other node, create flag file. idk how to do this better")
     pass
 
 
 def handleStates(state):
     """Main FSM"""
-    if state == "idle":  # Idle State, should look inside project directory for files to run
-        processReceived, process = waitForProcessCMD()
-        if processReceived:
-            state = "processing"
-            startProcessThread(process)
-
-    if state == "processing":  # Processing State, continue processing until finished or until migration command initiated
-        migrate, isManualCMD = waitForMigrateCMD()
-        if migrate:
-            state = "migrating"
-            processID = getProcessID()  # If complete, send output logs or finished process results back to user
-        elif process.isComplete():
-            state = "idle"
-            sendProcessResultsToUser()
-    if state == "migrating":
-        migrateProcessToAvaliableNode(processID, process)
-        # if migration command is manual, then keep the node in idle, else send to shutdown state
-        if isManualCMD:
-            state = "idle"
-        else:
-            state = "shutdown"
-    # Node will shut down eventually with loss of power, but potentially leaving the option to return to
-    # Idle state if power does return and node somehow still can operate
-    if state == "shutdown":
-        if not isLossOfPower():
-            state = "idle"
+    match state:
+        case "idle": # Idle State, should look inside project directory for files to run
+            processReceived, process = waitForProcessCMD()
+            if processReceived:
+                state = "processing"
+                startProcessThread(process)
+        
+        case "processing":
+            migrate, isManualCMD = waitForMigrateCMD()
+            if migrate:
+                state = "migrating"
+                processID = getProcessID()  # If complete, send output logs or finished process results back to user
+            elif process.isComplete():
+                state = "idle"
+                sendProcessResultsToUser()
+        
+        
+        case "migrating":
+            migrateProcessToAvaliableNode(processID, process)
+            # if migration command is manual, then keep the node in idle, else send to shutdown state
+            if isManualCMD:
+                state = "idle"
+            else:
+                state = "shutdown"
+        case "shutdown":
+            # Node will shut down eventually with loss of power, but potentially leaving the option to return to
+            # Idle state if power does return and node somehow still can operate    
+            if not isLossOfPower():
+                state = "idle"
     return state
-
 
 if __name__ == '__main__':
     state = "idle"
