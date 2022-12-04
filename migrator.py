@@ -70,20 +70,19 @@ def startProcessThread(process):
     pass
 
 
-def NetworkScan() -> None:
+def NetworkScan(subnet= "192.168.137", lowerlim=1, upperlim=255) -> list:
     """Scan network ping scan for available nodes"""
-    global nodeIPaddrs
-    #import netifaces
+    nodeIPaddrs = []
     selfIP = socket.gethostbyname(socket.gethostname())
-    selfIP_subnet = selfIP.split(".")[3]
-    # gatewayIP = "192.168.137.xxx"
-    for i in range(1, 255):
-        if i == selfIP_subnet: continue
-        # if i == gatewayIP: continue
-        ip = "192.168.137." + str(i)
-        response = os.system("ping -c 1 " + ip)
-        if response == 0: nodeIPaddrs.append(ip)
-    # incomplete
+    gateway_ip = subprocess.run(["ip", "route", "show", "default"], stdout=subprocess.PIPE).stdout.strip().split()[2]
+    
+    for i in range(lowerlim, upperlim):
+        ip = f"{subnet}.{i}"
+        if ip == selfIP or ip == gateway_ip: continue
+        
+        result = subprocess.run(["ping", "-c", "1", "-n", ip], stdout=subprocess.PIPE)
+        if result.returncode == 0: nodeIPaddrs.append(ip)
+     return nodeIPaddrs
 
 
 def manualInput(input) -> bool:
@@ -99,7 +98,10 @@ def waitForMigrateCMD() -> tuple[bool, bool]:
         return True, True
     else:
         return False, False
-
+def sendFinishTransferFlag(username="pi", ip="1", password="pi", path=""):
+    result = subprocess.run(["ssh", "-t", f"{username}@{ip}", "-p", "{password}", "touch {path}; exit"], stdout=subprocess.PIPE)
+    if result.returncode == 0: print("File updated successfully")
+    else: print("Failed to update file")
 
 def pollNodeforState(address) -> str:
     """Poll node at given address to get state"""
