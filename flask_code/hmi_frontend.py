@@ -10,7 +10,7 @@ from PySide6.QtWidgets import *
 class MainWindow(QMainWindow):
     def __init__(self, parent=None, listenPort=12345):
         super().__init__()
-        self.setMinimumSize(600, 600)
+        self.setMinimumSize(600, 200)
 
         title_label = QLabel("Migration Assistant")
         title_label.setStyleSheet("font-size: 40px; font-weight: bold;")
@@ -47,6 +47,22 @@ class PowerWidget(QWidget):
         super().__init__(parent)
 
 
+class RefreshWidget(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+    def refreshNodesList(self):
+        """
+        be careful with this function. it does not work yet and I dont
+        really know what happens if you run it
+        """
+        global nodeIPs
+        nodeIPs = []
+        # os.system("sudo arp-scan -x -q -l -g") # scan the local subnet and ask which nodes are alive
+        while selfIP in nodeIPs:
+            nodeIPs.remove(selfIP)
+
+
 class NodeSelectionWidget(QWidget):
     def __init__(self):
         super().__init__()
@@ -68,6 +84,8 @@ class NodeSelectionWidget(QWidget):
 
 
 if __name__ == '__main__':
+    selfIP = socket.gethostbyname(socket.gethostname())
+    nodeIPs = ["192.168.137.139", "192.168.137.140", "192.168.137.141", "192.168.137.142", "192.168.137.143"]
     app = QApplication(sys.argv)
     w = MainWindow()
     w.show()
