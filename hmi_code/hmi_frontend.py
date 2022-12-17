@@ -54,16 +54,15 @@ class RefreshWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-    def refreshNodesList(self) -> None:
+    def refreshNodesList(self) -> None:  # could potentially change so instead of active scan, wait and listen for broadcast messages instead.
         global nodeIPs
         nodeIPs = []
 
-        output = subprocess.run(['ip', 'route'], capture_output=True, text=True).stdout
-        cidr = output.splitlines()[1].split(' ')[0]  # get the cidr of the current network
-        gateIP = output.splitlines()[0].split(' ')[2]  # get the gateway ip of the current network
+        output = subprocess.run(['ip', 'route'], capture_output=True, text=True).stdout.splitlines()
+        gateIP = output[0].split(' ')[2]  # get the gateway ip of the current network
+        cidr = output[1].split(' ')[0]  # get the cidr of the current network
 
-        output = subprocess.run(['sudo', 'arp-scan', cidr, '-x', '-q', '-g'], capture_output=True, text=True).stdout
-        lines = output.splitlines()
+        lines = subprocess.run(['sudo', 'arp-scan', cidr, '-x', '-q', '-g'], capture_output=True, text=True).stdout.splitlines()
         for line in lines:  # for every found node in the network
             nodeIPs.append(line.split('\t')[0])  # add the ip of that node to the list
         print(nodeIPs)

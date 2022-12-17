@@ -72,17 +72,21 @@ def startProcessThread(process):
 
 def NetworkScan() -> list:
     """Scan network ping scan for available nodes"""
-    nodeIPaddrs = []
     selfIP = socket.gethostbyname(socket.gethostname())
-    gateway_ip = subprocess.run(["ip", "route", "show", "default"], stdout=subprocess.PIPE).stdout.strip().split()[2]
+    output = subprocess.run(['ip', 'route'], capture_output=True, text=True).stdout.splitlines()
+    gateIP = output[0].split(' ')[2]  # get the gateway ip of the current network
+    cidr = output[1].split(' ')[0]  # get the cidr of the current network
 
-    for i in range(lowerlim, upperlim):
-        ip = f"{subnet}.{i}"
-        if ip == selfIP or ip == gateway_ip: continue
+    nodeIPs = []
+    lines = subprocess.run(['sudo', 'arp-scan', cidr, '-x', '-q', '-g'], capture_output=True, text=True).stdout.splitlines()
+    for line in lines:  # for every found node in the network
+        nodeIPs.append(line.split('\t')[0])  # add the ip of that node to the list
 
-        result = subprocess.run(["ping", "-c", "1", "-n", ip], stdout=subprocess.PIPE)
-        if result.returncode == 0: nodeIPaddrs.append(ip)
-     return nodeIPaddrs
+    if selfIP in nodeIPs:
+        nodeIPs.remove(selfIP)  # removing my own ip from the list
+    if gateIP in nodeIPs:
+        nodeIPs.remove(gateIP)  # removing gateway ip from the list
+    return nodeIPs
 
 
 def manualInput(input) -> bool:
@@ -98,10 +102,15 @@ def waitForMigrateCMD() -> tuple[bool, bool]:
         return True, True
     else:
         return False, False
+
+
 def sendFinishTransferFlag(username="pi", ip="1", password="pi", path=""):
     result = subprocess.run(["ssh", "-t", f"{username}@{ip}", "-p", "{password}", "touch {path}; exit"], stdout=subprocess.PIPE)
-    if result.returncode == 0: print("File updated successfully")
-    else: print("Failed to update file")
+    if result.returncode == 0:
+        print("File updated successfully")
+    else:
+        print("Failed to update file")
+
 
 def pollNodeforState(address) -> str:
     """Poll node at given address to get state"""
@@ -109,13 +118,14 @@ def pollNodeforState(address) -> str:
     statefromNode = "idle"
     return statefromNode
 
+
 def waitForProcessCMD():
     # #Check specified directory for files
     # Process = (check directory, if not empty, then it should contain a process and checkpoint)
     # If Process != none
     # Return Process, true
     # Else
-    #	Return none, false
+    # Return none, false
     pass
 
 
@@ -154,15 +164,18 @@ def migrateProcessToAvaliableNode(processID, process):
 def getProcessID(proc) -> int:
     # *Get process ID from process*
     # pid = subprocess.check_output(['pidof', 'f{proc}'])
-    return 0 # pid
+    return 0  # pid
+
 
 def criuDump(proc) -> bool:
     result = subprocess.check_output(['sudo', 'criu', 'dump', '-t', f'$(pgrep {proc})', '-v4', '-o', 'output.log', '&&', 'echo', 'OK'])
     return result == "OK"
 
+
 def criuRestore(path) -> bool:
     result = subprocess.check_output(['sudo', 'criu', 'restore', '-d', '-v4', '-o', 'restore.log', '&&', 'echo', 'OK'])
     return result == "OK"
+
 
 def sendProcessResultsToUser():
     # os.system("scp .....")
@@ -173,12 +186,12 @@ def sendProcessResultsToUser():
 def handleStates(state):
     """Main FSM"""
     match state:
-        case "idle": # Idle State, should look inside project directory for files to run
+        case "idle":  # Idle State, should look inside project directory for files to run
             processReceived, process = waitForProcessCMD()
             if processReceived:
                 state = "processing"
                 startProcessThread(process)
-        
+
         case "processing":
             migrate, isManualCMD = waitForMigrateCMD()
             if migrate:
@@ -187,8 +200,7 @@ def handleStates(state):
             elif process.isComplete():
                 state = "idle"
                 sendProcessResultsToUser()
-        
-        
+
         case "migrating":
             migrateProcessToAvaliableNode(processID, process)
             # if migration command is manual, then keep the node in idle, else send to shutdown state
@@ -198,10 +210,11 @@ def handleStates(state):
                 state = "shutdown"
         case "shutdown":
             # Node will shut down eventually with loss of power, but potentially leaving the option to return to
-            # Idle state if power does return and node somehow still can operate    
+            # Idle state if power does return and node somehow still can operate
             if not isLossOfPower():
                 state = "idle"
     return state
+
 
 if __name__ == '__main__':
     state = "idle"
