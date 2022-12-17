@@ -73,12 +73,12 @@ def startProcessThread(process):
 def NetworkScan() -> list:
     """Scan network ping scan for available nodes"""
     selfIP = socket.gethostbyname(socket.gethostname())
-    output = subprocess.run(['ip', 'route'], capture_output=True, text=True).stdout.splitlines()
-    gateIP = output[0].split(' ')[2]  # get the gateway ip of the current network
-    cidr = output[1].split(' ')[0]  # get the cidr of the current network
+    gateway, cidrConf = subprocess.run(['ip', 'route'], capture_output=True, text=True).stdout.splitlines()  # get the network configuration of the node
+    gateIP = gateway.split(' ')[2]  # get the gateway ip of the current network from the network configuration
+    cidrIP = cidrConf.split(' ')[0]  # get the full cidr of the current network from the network configuration
 
     nodeIPs = []
-    lines = subprocess.run(['sudo', 'arp-scan', cidr, '-x', '-q', '-g'], capture_output=True, text=True).stdout.splitlines()
+    lines = subprocess.run(['sudo', 'arp-scan', cidrIP, '-x', '-q', '-g'], capture_output=True, text=True).stdout.splitlines()
     for line in lines:  # for every found node in the network
         nodeIPs.append(line.split('\t')[0])  # add the ip of that node to the list
 
@@ -105,7 +105,7 @@ def waitForMigrateCMD() -> tuple[bool, bool]:
 
 
 def sendFinishTransferFlag(username="pi", ip="1", password="pi", path=""):
-    result = subprocess.run(["ssh", "-t", f"{username}@{ip}", "-p", "{password}", "touch {path}; exit"], stdout=subprocess.PIPE)
+    result = subprocess.run(["ssh", "-t", f"{username}@{ip}", "-p", f"{password}", f"touch {path}; exit"], stdout=subprocess.PIPE)
     if result.returncode == 0:
         print("File updated successfully")
     else:
