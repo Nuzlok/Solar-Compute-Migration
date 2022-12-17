@@ -70,16 +70,16 @@ def startProcessThread(process):
     pass
 
 
-def NetworkScan(subnet= "192.168.137", lowerlim=1, upperlim=255) -> list:
+def NetworkScan() -> list:
     """Scan network ping scan for available nodes"""
     nodeIPaddrs = []
     selfIP = socket.gethostbyname(socket.gethostname())
     gateway_ip = subprocess.run(["ip", "route", "show", "default"], stdout=subprocess.PIPE).stdout.strip().split()[2]
-    
+
     for i in range(lowerlim, upperlim):
         ip = f"{subnet}.{i}"
         if ip == selfIP or ip == gateway_ip: continue
-        
+
         result = subprocess.run(["ping", "-c", "1", "-n", ip], stdout=subprocess.PIPE)
         if result.returncode == 0: nodeIPaddrs.append(ip)
      return nodeIPaddrs

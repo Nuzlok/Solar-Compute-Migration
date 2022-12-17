@@ -1,9 +1,10 @@
 import json
 import socket
+import subprocess
 import sys
 import time
 
-from PyQt6.QtCore import Qt, QThread, QTimer
+from PyQt6.QtCore import *
 from PySide6.QtWidgets import *
 
 
@@ -30,11 +31,13 @@ class MainWindow(QMainWindow):
 
 
 class asyncWorker(QThread):
-    def run(self):
+    """This class is used to listen for incoming broadcast status packets from the nodes for the HMI to display"""
+
+    def run(self, listenPort=12345, sockSize=512):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # Create a UDP socket
-        sock.bind(('', 12345))  # Listen on all interfaces on port 12345 for broadcast packets
+        sock.bind(('', listenPort))  # Listen on all interfaces on port 12345 for broadcast packets
         while True:
-            data, _ = sock.recvfrom(512)
+            data, _ = sock.recvfrom(sockSize)
             packet = json.loads(data.decode('utf-8'))
             ip = packet['ip']
             del packet['ip']
@@ -51,16 +54,24 @@ class RefreshWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-    def refreshNodesList(self):
-        """
-        be careful with this function. it does not work yet and I dont
-        really know what happens if you run it
-        """
+    def refreshNodesList(self) -> None:
         global nodeIPs
         nodeIPs = []
-        # os.system("sudo arp-scan -x -q -l -g") # scan the local subnet and ask which nodes are alive
-        while selfIP in nodeIPs:
-            nodeIPs.remove(selfIP)
+
+        output = subprocess.run(['ip', 'route'], capture_output=True, text=True).stdout
+        cidr = output.splitlines()[1].split(' ')[0]  # get the cidr of the current network
+        gateIP = output.splitlines()[0].split(' ')[2]  # get the gateway ip of the current network
+
+        output = subprocess.run(['sudo', 'arp-scan', cidr, '-x', '-q', '-g'], capture_output=True, text=True).stdout
+        lines = output.splitlines()
+        for line in lines:  # for every found node in the network
+            nodeIPs.append(line.split('\t')[0])  # add the ip of that node to the list
+        print(nodeIPs)
+
+        if selfIP in nodeIPs:
+            nodeIPs.remove(selfIP)  # removing my own ip from the list
+        if gateIP in nodeIPs:
+            nodeIPs.remove(gateIP)  # removing gateway ip from the list
 
 
 class NodeSelectionWidget(QWidget):
