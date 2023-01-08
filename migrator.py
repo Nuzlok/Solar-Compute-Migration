@@ -169,12 +169,18 @@ def getProcessID(proc) -> int:
 
 def criuDump(proc) -> bool:
     result = subprocess.check_output(['sudo', 'criu', 'dump', '-t', f'$(pgrep {proc})', '-v4', '-o', 'output.log', '&&', 'echo', 'OK'])
-    return result == "OK"
+    if result == "OK":
+        return True
+    else:
+        raise Exception(f"CRIU Dump Result: '{result}', Expected: OK")
 
 
 def criuRestore(path) -> bool:
     result = subprocess.check_output(['sudo', 'criu', 'restore', '-d', '-v4', '-o', 'restore.log', '&&', 'echo', 'OK'])
-    return result == "OK"
+    if result == "OK":
+        return True
+    else:
+        raise Exception(f"CRIU Restore Result: '{result}', Expected: OK")
 
 
 def sendProcessResultsToUser():
@@ -214,6 +220,12 @@ def handleStates(state):
             if not isLossOfPower():
                 state = "idle"
     return state
+
+
+def saveNodeState(state: dict) -> None:
+    # *Save node state to file*
+    with open("state.json", "w", encoding='utf-8') as f:
+        f.write(json.dumps(state))
 
 
 if __name__ == '__main__':

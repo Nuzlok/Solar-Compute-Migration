@@ -7,6 +7,9 @@ import time
 from PyQt6.QtCore import *
 from PySide6.QtWidgets import *
 
+STAY_NODE = True
+CURRENT_NODE = 'x'
+
 
 class MainWindow(QMainWindow):
     def __init__(self, parent=None, listenPort=12345):
@@ -39,10 +42,10 @@ class asyncWorker(QThread):
         while True:
             data, _ = sock.recvfrom(sockSize)
             packet = json.loads(data.decode('utf-8'))
-            ip = packet['ip']
-            del packet['ip']
-            print(f"State for {ip} is {packet}")
-            # time.sleep(0.4)
+
+            if CURRENT_NODE in packet['ip']:  # if the packet is from the currently selected node
+                del packet['ip']
+                print(f"State for Node {CURRENT_NODE} is {packet}")
 
 
 class PowerWidget(QWidget):
@@ -79,7 +82,7 @@ class NodeSelectionWidget(QWidget):
 
         # Create the combo box and set its items
         self.combo_box = QComboBox()
-        self.combo_box.addItems(["Select Node", "Item 1", "Item 2", "Item 3", "Item 4"])
+        self.combo_box.addItems(["Select a Node", "139", "140", "141", "142"])
         self.combo_box.currentIndexChanged.connect(self.combo_box_index_changed)
 
         self.label = QLabel("Currently viewing:")
@@ -89,8 +92,9 @@ class NodeSelectionWidget(QWidget):
         self.setLayout(self.layout)
 
     def combo_box_index_changed(self):
-        # Print the selected item's index to the console
-        print(self.combo_box.currentIndex())
+        global CURRENT_NODE
+        CURRENT_NODE = self.combo_box.currentText()
+        print(f"Selected Node: {CURRENT_NODE}")  # Print the selected item's index to the console
 
 
 if __name__ == '__main__':
