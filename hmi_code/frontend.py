@@ -98,8 +98,13 @@ class PowerWidget(QWidget):
 
 
 class RefreshWidget(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, size=20):
         super().__init__(parent)
+
+        self.button = QPushButton('', self)
+        self.button.setIcon(QIcon('refresh.png'))
+        self.button.setIconSize(QSize(size, size))
+        # self.button.connect(self.button, SIGNAL('clicked()'), self.refreshNodesList)
 
     def refreshNodesList(self) -> None:  # could potentially change so instead of active scan, wait and listen for broadcast messages instead.
         global nodeIPs
@@ -143,6 +148,8 @@ class NodeSelectionWidget(QWidget):
         self.combo_box.currentIndexChanged.connect(self.combo_box_index_changed)
         # self.combo_box.setStyleSheet("color: grey; border-radius: 1px; border: 1px solid grey;")
 
+        self.refreshbutton = RefreshWidget(parent=self)
+
         self.label = QLabel("Currently viewing:")
 
         self.label2 = QLabel("IP of Node: ")
@@ -155,6 +162,7 @@ class NodeSelectionWidget(QWidget):
         self.layout = QHBoxLayout()
         self.layout.addWidget(self.label, 0)
         self.layout.addWidget(self.combo_box, 1)
+        self.layout.addWidget(self.refreshbutton, 2)
         self.layout.addWidget(self.label2, 3, Qt.AlignRight)
         self.layout.addWidget(self.address, 4)
         self.setLayout(self.layout)
