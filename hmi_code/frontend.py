@@ -10,7 +10,6 @@ from PySide6.QtWidgets import *
 
 from customWidgets import *
 
-NODE_STATUS = {'ip': 'x'}
 CURRENT_NODE = 'x'
 DEBUG = True
 
@@ -61,7 +60,7 @@ class asyncWorker(QThread):
         self._running = False
 
     def run(self, listenPort=12345, sockSize=512):
-        global CURRENT_NODE, NODE_STATUS
+        global CURRENT_NODE
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # Create a UDP socket
         sock.settimeout(1)  # Set a timeout for 1 second so the socket doesn't block indefinately when closing the program
         sock.bind(('', listenPort))  # Listen on all interfaces on port 12345 for broadcast packets
@@ -70,11 +69,10 @@ class asyncWorker(QThread):
         while self._running:
             try:
                 packet = json.loads(sock.recvfrom(sockSize)[0].decode('utf-8'))
-                if CURRENT_NODE in packet['ip']:  # TODO: Fix this (if the packet is from the currently selected node). This is a hacky way to do it
-                    NODE_STATUS = packet
-                    mWindow.nodeSelector.address.setText(NODE_STATUS['ip'])
-                    mWindow.powerWidget.power.setText(f"{NODE_STATUS['current']*NODE_STATUS['voltage']} W")
-                    mWindow.stateText.stateText.setText(f"{NODE_STATUS['state']}")
+                if CURRENT_NODE in packet['ip']:  # TODO: Fix this if statement (if the packet is from the currently selected node). This is a hacky way to do it
+                    mWindow.nodeSelector.address.setText(packet['ip'])
+                    mWindow.powerWidget.power.setText(f"{packet['current']*packet['voltage']} W")
+                    mWindow.stateText.stateText.setText(packet['state'])
                     if DEBUG:
                         print(f"State for Node {CURRENT_NODE} is {packet}")
             except:
@@ -102,10 +100,9 @@ class RefreshWidget(QWidget):
     def __init__(self, parent=None, size=20):
         super().__init__(parent)
 
-        self.button = QPushButton('', self)
-        self.button.setIcon(QIcon('refresh.png'))
+        self.button = QPushButton(icon=QIcon('refresh.png'), parent=self)
         self.button.setIconSize(QSize(size, size))
-        # self.button.connect(self.button, SIGNAL('clicked()'), self.refreshNodesList)
+        # self.button.connect(self.button, SIGNAL('clicked()'), self.refreshNodesList) # FIX THE FUNCTION FIRST
 
     def refreshNodesList(self) -> None:  # could potentially change so instead of active scan, wait and listen for broadcast messages instead.
         if platform.system() != 'Linux':
