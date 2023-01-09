@@ -44,16 +44,18 @@ class MainWindow(QMainWindow):
         self.worker = asyncWorker()
         self.worker.start()
 
-    def __enter__(self):  # This is used to start the asyncWorker thread when the main window is created (with the 'with' keyword)
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):  # This is used to stop the asyncWorker thread when the main window is closed
+    def closeEvent(self, event) -> None:
         self.worker.stop()
-        self.worker.wait(200)  # TODO: Fix this. Closing the window doesn't always stop the thread
+        self.worker.wait()
+        return super().closeEvent(event)
 
 
 class asyncWorker(QThread):
     """This class is used to listen for incoming broadcast status packets from the nodes for the HMI to display"""
+
+    def __init__(self):
+        super().__init__()
+        self._running = True
 
     def stop(self):
         self._running = False
@@ -61,18 +63,21 @@ class asyncWorker(QThread):
     def run(self, listenPort=12345, sockSize=512):
         global CURRENT_NODE, NODE_STATUS
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # Create a UDP socket
+        sock.settimeout(1)  # Set a timeout for 1 second so the socket doesn't block indefinately when closing the program
         sock.bind(('', listenPort))  # Listen on all interfaces on port 12345 for broadcast packets
         self._running = True
-        while self._running:
-            packet = json.loads(sock.recvfrom(sockSize)[0].decode('utf-8'))
 
-            if CURRENT_NODE in packet['ip']:  # TODO: Fix this (if the packet is from the currently selected node). This is a hacky way to do it
-                NODE_STATUS = packet
-                mWindow.nodeSelector.address.setText(NODE_STATUS['ip'])
-                mWindow.powerWidget.power.setText(f"{NODE_STATUS['current']*NODE_STATUS['voltage']} W")
-                if DEBUG:
-                    print(f"State for Node {CURRENT_NODE} is {packet}")
-        print("Stopping asyncWorker thread...")
+        while self._running:
+            try:
+                packet = json.loads(sock.recvfrom(sockSize)[0].decode('utf-8'))
+                if CURRENT_NODE in packet['ip']:  # TODO: Fix this (if the packet is from the currently selected node). This is a hacky way to do it
+                    NODE_STATUS = packet
+                    mWindow.nodeSelector.address.setText(NODE_STATUS['ip'])
+                    mWindow.powerWidget.power.setText(f"{NODE_STATUS['current']*NODE_STATUS['voltage']} W")
+                    if DEBUG:
+                        print(f"State for Node {CURRENT_NODE} is {packet}")
+            except:
+                pass
 
 
 class PowerWidget(QWidget):
@@ -222,6 +227,5 @@ if __name__ == '__main__':
     nodeIPs = ["192.168.137.139", "192.168.137.140", "192.168.137.141", "192.168.137.142", "192.168.137.143"]
     app = QApplication(sys.argv)
     mWindow = MainWindow()
-    with mWindow:  # ensures that the asyncworker is stopped using the exit dunder (does not work yet)
-        mWindow.show()
-        app.exec()
+    mWindow.show()
+    app.exec()
