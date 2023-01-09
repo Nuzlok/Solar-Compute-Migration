@@ -18,10 +18,11 @@ DEBUG = True
 class MainWindow(QMainWindow):
     def __init__(self, listenPort=12345, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.setMinimumSize(600, 200)
+        self.setMinimumSize(600, 300)
         self.setWindowTitle("Migration Assistant")
 
         self.title_label = QLabel("Migration Assistant")
+        self.title_label.setAlignment(Qt.AlignCenter)
         self.title_label.setStyleSheet("font-size: 40px; font-weight: bold;")
         self.nodeSelector = NodeSelectionWidget()
         self.powerWidget = PowerWidget()
@@ -81,8 +82,9 @@ class PowerWidget(QWidget):
 
         self.power = QLineEdit(self)
         self.power.setText('Select a Node')
+        self.power.setAlignment(Qt.AlignCenter)
+        self.power.setStyleSheet("color: grey; border-radius: 10px; border: 1px solid grey;")
         self.power.setReadOnly(True)
-        self.power.setStyleSheet("color: grey; ")
 
         self.layout = QHBoxLayout()
         self.layout.addWidget(self.label, 0)
@@ -134,6 +136,7 @@ class NodeSelectionWidget(QWidget):
         self.combo_box = QComboBox()
         self.combo_box.addItems(["Select a Node", "139", "140", "141", "142"])
         self.combo_box.currentIndexChanged.connect(self.combo_box_index_changed)
+        # self.combo_box.setStyleSheet("color: grey; border-radius: 1px; border: 1px solid grey;")
 
         self.label = QLabel("Currently viewing:")
 
@@ -141,7 +144,8 @@ class NodeSelectionWidget(QWidget):
         self.address = QLineEdit(self)
         self.address.setText('Select a Node')
         self.address.setReadOnly(True)
-        self.address.setStyleSheet("color: grey;")
+        self.address.setAlignment(Qt.AlignCenter)
+        self.address.setStyleSheet("color: grey;border-radius: 10px; border: 1px solid grey;")
 
         self.layout = QHBoxLayout()
         self.layout.addWidget(self.label, 0)
@@ -165,25 +169,27 @@ class ManualButtonsWidget(QWidget):
         super().__init__()
 
         # Create the buttons
-        self.red_button = QPushButton("Transfer")
-        self.red_button.setStyleSheet("background-color: grey; color: white;")
-        self.green_button = QPushButton("Take New Process")
-        self.green_button.setStyleSheet("background-color: light-green; color: white;")
-        self.blue_button = QPushButton("Save Process")
-        self.blue_button.setStyleSheet("background-color: light-blue; color: white;")
-        self.yellow_button = QPushButton("Shutdown")
-        self.yellow_button.setStyleSheet("background-color: red; color: white;")
+        self.transferBut = self.createButtonTemplate("Transfer", "grey")
+        self.takeNewPBut = self.createButtonTemplate("Take New Process", "light-green")
+        self.saveProcBut = self.createButtonTemplate("Save Process", "light-blue")
+        self.shutdownBut = self.createButtonTemplate(label="Shutdown", bColor="red")
 
         # Create the layout and add the buttons to it in a 2x2 grid
         self.layout = QGridLayout()
-        self.layout.addWidget(self.red_button, 0, 0)
-        self.layout.addWidget(self.green_button, 0, 1)
-        self.layout.addWidget(self.blue_button, 1, 0)
-        self.layout.addWidget(self.yellow_button, 1, 1)
+        self.layout.addWidget(self.transferBut, 0, 0)
+        self.layout.addWidget(self.takeNewPBut, 0, 1)
+        self.layout.addWidget(self.saveProcBut, 1, 0)
+        self.layout.addWidget(self.shutdownBut, 1, 1)
 
         # Set the spacing property of the layout to add space between the buttons
         self.layout.setSpacing(10)
         self.setLayout(self.layout)
+
+    def createButtonTemplate(self, label, style='color: white; border-radius: 8px; border: 1px solid grey;', height=30, bColor='green') -> QPushButton:
+        temp = QPushButton(label)
+        temp.setStyleSheet(f"background-color: {bColor}; {style}")
+        temp.setMinimumHeight(height)
+        return temp
 
 
 class CurrentStateWidget(QWidget):
@@ -191,9 +197,10 @@ class CurrentStateWidget(QWidget):
         super().__init__()
         self.stateText = QLineEdit(self)
         self.stateText.setText('Current State')
+        self.stateText.setAlignment(Qt.AlignCenter)
         self.stateText.setReadOnly(True)
         self.stateText.setMinimumHeight(100)
-        self.stateText.setStyleSheet("color: grey; font: 24pt; text-align: center;")
+        self.stateText.setStyleSheet("color: grey; font: 24pt; text-align: center; border-radius: 10px; border: 1px solid grey;")
 
         self.layout = QHBoxLayout()
         self.layout.addWidget(self.stateText, 1)
