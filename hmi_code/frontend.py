@@ -8,6 +8,8 @@ from PySide6.QtCore import *
 from PySide6.QtGui import *
 from PySide6.QtWidgets import *
 
+from customWidgets import *
+
 NODE_STATUS = {'ip': 'x'}
 CURRENT_NODE = 'x'
 DEBUG = True
@@ -17,41 +19,50 @@ class MainWindow(QMainWindow):
     def __init__(self, listenPort=12345, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.setMinimumSize(600, 200)
+        self.setWindowTitle("Migration Assistant")
 
         self.title_label = QLabel("Migration Assistant")
         self.title_label.setStyleSheet("font-size: 40px; font-weight: bold;")
         self.nodeSelector = NodeSelectionWidget()
         self.powerWidget = PowerWidget()
-
         self.manualMode = ManualModeWidget()
+        self.manualButtons = ManualButtonsWidget()
+        self.stateText = CurrentStateWidget()
 
         self.layout = QGridLayout()
         self.layout.addWidget(self.title_label, 0, 0, 1, 4)
         self.layout.addWidget(self.nodeSelector, 1, 0, 1, 3)
         self.layout.addWidget(self.powerWidget, 2, 0)
         self.layout.addWidget(self.manualMode, 2, 1)
+        self.layout.addWidget(self.stateText, 3, 0)
+        self.layout.addWidget(self.manualButtons, 3, 1)
         self.layoutWidget = QWidget()
         self.layoutWidget.setLayout(self.layout)
         self.setCentralWidget(self.layoutWidget)
 
         self.worker = asyncWorker()
-        with self.worker:
-            self.worker.start()
+        self.worker.start()
+
+    def __enter__(self):  # This is used to start the asyncWorker thread when the main window is created (with the 'with' keyword)
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):  # This is used to stop the asyncWorker thread when the main window is closed
+        self.worker.stop()
+        self.worker.wait(200)  # TODO: Fix this. Closing the window doesn't always stop the thread
 
 
 class asyncWorker(QThread):
     """This class is used to listen for incoming broadcast status packets from the nodes for the HMI to display"""
 
     def stop(self):
-        self.KeepRunning = False
+        self._running = False
 
     def run(self, listenPort=12345, sockSize=512):
         global CURRENT_NODE, NODE_STATUS
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # Create a UDP socket
         sock.bind(('', listenPort))  # Listen on all interfaces on port 12345 for broadcast packets
-        self.KeepRunning = True
-        print(f"Worker thread started {self.KeepRunning}")
-        while self.KeepRunning:
+        self._running = True
+        while self._running:
             packet = json.loads(sock.recvfrom(sockSize)[0].decode('utf-8'))
 
             if CURRENT_NODE in packet['ip']:  # TODO: Fix this (if the packet is from the currently selected node). This is a hacky way to do it
@@ -60,71 +71,7 @@ class asyncWorker(QThread):
                 mWindow.powerWidget.power.setText(f"{NODE_STATUS['current']*NODE_STATUS['voltage']} W")
                 if DEBUG:
                     print(f"State for Node {CURRENT_NODE} is {packet}")
-
-        print("Worker thread stopped")
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.stop()
-        # self.wait()
-
-
-class QToggleSwitch(QCheckBox):
-    """ A custom toggle switch widget. Copied from: https://www.youtube.com/watch?v=NnJFi285s3M"""
-
-    def __init__(self, width=60, bg_color="#777", circle_color="#DDD",  active_color="#599afe", animation_curve=QEasingCurve.Type.OutCirc):
-        super().__init__()
-
-        self.setFixedSize(width, 28)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-
-        self._bg_color = bg_color
-        self._circle_color = circle_color
-        self._active_color = active_color
-
-        self._circle_position = 3
-        self.animation = QPropertyAnimation(self, b"circle_position", self)
-        self.animation.setEasingCurve(animation_curve)
-        self.animation.setDuration(200)
-
-        self.stateChanged.connect(self.start_transition)
-
-    @Property(float)
-    def circle_position(self):
-        return self._circle_position
-
-    @circle_position.setter
-    def circle_position(self, pos):
-        self._circle_position = pos
-        self.update()
-
-    def start_transition(self, value):
-        self.animation.stop()
-        self.animation.setEndValue(self.width() - 26 if value else 3)
-        if DEBUG:
-            print(f'Manual Mode isChecked: {self.isChecked()}')
-        self.animation.start()
-
-    def Error(self):
-        self.setCheckState(Qt.Unchecked)
-        self.start_transition
-
-    def paintEvent(self, _: QPaintEvent):
-        p = QPainter()
-        p.begin(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setPen(Qt.PenStyle.NoPen)
-
-        p.setBrush(QColor(self._active_color if self.isChecked() else self._bg_color))
-        p.drawRoundedRect(0, 0, self.width(), self.height(), self.height() / 2, self.height() / 2)
-        p.setBrush(QColor(self._circle_color))
-        p.drawEllipse(self._circle_position, 3, 22, 22)
-        p.end()
-
-    def hitButton(self, pos: QPoint) -> bool:
-        return self.contentsRect().contains(pos)
+        print("Stopping asyncWorker thread...")
 
 
 class PowerWidget(QWidget):
@@ -190,7 +137,7 @@ class NodeSelectionWidget(QWidget):
 
         self.label = QLabel("Currently viewing:")
 
-        self.label2 = QLabel("IP Address of Selected Node: ")
+        self.label2 = QLabel("IP of Node: ")
         self.address = QLineEdit(self)
         self.address.setText('Select a Node')
         self.address.setReadOnly(True)
@@ -213,10 +160,61 @@ class NodeSelectionWidget(QWidget):
         print(f"Selected Node: {CURRENT_NODE}")  # Print the selected item's index to the console
 
 
+class ManualButtonsWidget(QWidget):
+    def __init__(self):
+        super().__init__()
+
+        # Create the buttons
+        self.red_button = QPushButton("Transfer")
+        self.red_button.setStyleSheet("background-color: grey; color: white;")
+        self.green_button = QPushButton("Take New Process")
+        self.green_button.setStyleSheet("background-color: light-green; color: white;")
+        self.blue_button = QPushButton("Save Process")
+        self.blue_button.setStyleSheet("background-color: light-blue; color: white;")
+        self.yellow_button = QPushButton("Shutdown")
+        self.yellow_button.setStyleSheet("background-color: red; color: white;")
+
+        # Create the layout and add the buttons to it in a 2x2 grid
+        self.layout = QGridLayout()
+        self.layout.addWidget(self.red_button, 0, 0)
+        self.layout.addWidget(self.green_button, 0, 1)
+        self.layout.addWidget(self.blue_button, 1, 0)
+        self.layout.addWidget(self.yellow_button, 1, 1)
+
+        # Set the spacing property of the layout to add space between the buttons
+        self.layout.setSpacing(10)
+        self.setLayout(self.layout)
+
+
+class CurrentStateWidget(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.stateText = QLineEdit(self)
+        self.stateText.setText('Current State')
+        self.stateText.setReadOnly(True)
+        self.stateText.setMinimumHeight(100)
+        self.stateText.setStyleSheet("color: grey; font: 24pt; text-align: center;")
+
+        self.layout = QHBoxLayout()
+        self.layout.addWidget(self.stateText, 1)
+        self.setLayout(self.layout)
+
+    def resizeEvent(self, event):
+        pixmap = QPixmap(self.size())
+        painter = QPainter(pixmap)
+        painter.fillRect(pixmap.rect(), QColor(255, 255, 255))
+        painter.setBrush(QColor(0, 0, 0))
+        painter.drawRoundedRect(pixmap.rect(), 25, 25)
+        self.setMask(pixmap.mask())
+        painter.end()
+        # self.stateText.setMinimumHeight(self.height() - 20)
+
+
 if __name__ == '__main__':
     selfIP = socket.gethostbyname(socket.gethostname())
     nodeIPs = ["192.168.137.139", "192.168.137.140", "192.168.137.141", "192.168.137.142", "192.168.137.143"]
     app = QApplication(sys.argv)
     mWindow = MainWindow()
-    mWindow.show()
-    app.exec()
+    with mWindow:  # ensures that the asyncworker is stopped using the exit dunder (does not work yet)
+        mWindow.show()
+        app.exec()
