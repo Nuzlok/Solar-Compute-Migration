@@ -1,4 +1,5 @@
 import json
+import platform
 import socket
 import subprocess
 import sys
@@ -107,8 +108,14 @@ class RefreshWidget(QWidget):
         # self.button.connect(self.button, SIGNAL('clicked()'), self.refreshNodesList)
 
     def refreshNodesList(self) -> None:  # could potentially change so instead of active scan, wait and listen for broadcast messages instead.
+        if platform.system() != 'Linux':
+            print('This program is only supported on Linux')  # TODO: This is a problem. Should work everywhere
+            return
         global nodeIPs
         nodeIPs = []
+
+        # -------------------- change so it works in any situation. currently only works when connected to nodes directly on ethernet --------------------
+        # -------------------- if any other devices is connected to the network, it will be added to the list when it should not --------------------
 
         output = subprocess.run(['ip', 'route'], capture_output=True, text=True).stdout.splitlines()
         gateIP = output[0].split(' ')[2]  # get the gateway ip of the current network
