@@ -2,7 +2,6 @@ import json
 import socket
 import subprocess
 import sys
-import time
 
 from PySide6.QtCore import *
 from PySide6.QtGui import *
@@ -74,6 +73,7 @@ class asyncWorker(QThread):
                     NODE_STATUS = packet
                     mWindow.nodeSelector.address.setText(NODE_STATUS['ip'])
                     mWindow.powerWidget.power.setText(f"{NODE_STATUS['current']*NODE_STATUS['voltage']} W")
+                    mWindow.stateText.stateText.setText(f"{NODE_STATUS['state']}")
                     if DEBUG:
                         print(f"State for Node {CURRENT_NODE} is {packet}")
             except:
@@ -164,8 +164,12 @@ class NodeSelectionWidget(QWidget):
         CURRENT_NODE = self.combo_box.currentText()
         if CURRENT_NODE != "Select a Node":
             self.address.setText('Loading...')
+            mWindow.stateText.stateText.setText('Loading...')
+            mWindow.powerWidget.power.setText('Loading...')
         else:
             self.address.setText('Select a Node')
+            mWindow.stateText.stateText.setText('Select a Node')
+            mWindow.powerWidget.power.setText('Select a Node')
         print(f"Selected Node: {CURRENT_NODE}")  # Print the selected item's index to the console
 
 
