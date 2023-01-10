@@ -6,8 +6,8 @@ from PySide6.QtWidgets import *
 class QToggleSwitch(QCheckBox):
     """ A custom toggle switch widget. Modified version of: https://www.youtube.com/watch?v=NnJFi285s3M"""
 
-    def __init__(self, width=60, color="#777", circle_color="#DDD",  active_color="#599afe", duration=200):
-        super().__init__()
+    def __init__(self, width=60, color="#777", circle_color="#DDD",  active_color="#599afe", duration=200, parent=None):
+        super().__init__(parent=parent)
 
         self.setFixedSize(width, 20)
         self.setCursor(Qt.CursorShape.PointingHandCursor)

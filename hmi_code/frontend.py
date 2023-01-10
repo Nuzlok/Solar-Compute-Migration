@@ -20,23 +20,23 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(600, 300)
         self.setWindowTitle("Migration Assistant")
 
-        self.title_label = QLabel("Migration Assistant")
+        self.title_label = QLabel("Migration Assistant", parent=self)
         self.title_label.setAlignment(Qt.AlignCenter)
         self.title_label.setStyleSheet("font-size: 40px; font-weight: bold;")
-        self.nodeSelector = NodeSelectionWidget()
-        self.powerWidget = PowerWidget()
-        self.manualMode = ManualModeWidget()
-        self.manualButtons = ManualButtonsWidget()
-        self.stateText = CurrentStateWidget()
+        self.nodeSelector = NodeSelectionWidget(parent=self)
+        self.powerWidget = PowerWidget(parent=self)
+        self.manualMode = ManualModeWidget(parent=self)
+        self.manualButtons = ManualButtonsWidget(parent=self)
+        self.stateText = CurrentStateWidget(parent=self)
 
-        self.layout = QGridLayout()
+        self.layout = QGridLayout(parent=self)
         self.layout.addWidget(self.title_label, 0, 0, 1, 4)
         self.layout.addWidget(self.nodeSelector, 1, 0, 1, 3)
         self.layout.addWidget(self.powerWidget, 2, 0)
         self.layout.addWidget(self.manualMode, 2, 1)
         self.layout.addWidget(self.stateText, 3, 0)
         self.layout.addWidget(self.manualButtons, 3, 1)
-        self.layoutWidget = QWidget()
+        self.layoutWidget = QWidget(parent=self)
         self.layoutWidget.setLayout(self.layout)
         self.setCentralWidget(self.layoutWidget)
 
@@ -81,7 +81,7 @@ class asyncWorker(QThread):
 
 class PowerWidget(QWidget):
     def __init__(self, parent=None):
-        super().__init__(parent)
+        super().__init__(parent=parent)
         self.label = QLabel("Input Power: ")
 
         self.power = QLineEdit(self)
@@ -98,7 +98,7 @@ class PowerWidget(QWidget):
 
 class RefreshWidget(QWidget):
     def __init__(self, parent=None, size=20):
-        super().__init__(parent)
+        super().__init__(parent=parent)
 
         self.button = QPushButton(icon=QIcon('refresh.png'), parent=self)
         self.button.setIconSize(QSize(size, size))
@@ -131,20 +131,25 @@ class RefreshWidget(QWidget):
 
 class ManualModeWidget(QWidget):
     def __init__(self, parent=None):
-        super().__init__(parent)
+        super().__init__(parent=parent)
         self.label = QLabel("Manual Mode: ")
 
-        self.check = QToggleSwitch()
+        self.check = QToggleSwitch(parent=self)
+        self.check.toggled.connect(self.on_toggled)
 
         self.layout = QHBoxLayout()
         self.layout.addWidget(self.label, 0, Qt.AlignRight)
         self.layout.addWidget(self.check, 1)
         self.setLayout(self.layout)
 
+    def on_toggled(self, state):
+        mWindow.manualButtons.setEnabled(state)
+        # print(f"Manual Mode {'Enabled' if state else 'Disabled'}")
+
 
 class NodeSelectionWidget(QWidget):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent=None):
+        super().__init__(parent=parent)
 
         # Create the combo box and set its items
         self.combo_box = QComboBox()
@@ -186,13 +191,15 @@ class NodeSelectionWidget(QWidget):
 
 
 class ManualButtonsWidget(QWidget):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent=None):
+        super().__init__(parent=parent)
+
+        self.buttonsGroup = []
 
         # Create the buttons
-        self.transferBut = self.createButtonTemplate("Transfer", "grey")
-        self.takeNewPBut = self.createButtonTemplate("Take New Process", "light-green")
-        self.saveProcBut = self.createButtonTemplate("Save Process", "light-blue")
+        self.transferBut = self.createButtonTemplate("Transfer", bColor="grey")
+        self.takeNewPBut = self.createButtonTemplate("Take New Process")
+        self.saveProcBut = self.createButtonTemplate("Save Process")
         self.shutdownBut = self.createButtonTemplate(label="Shutdown", bColor="red")
 
         # Create the layout and add the buttons to it in a 2x2 grid
@@ -206,16 +213,22 @@ class ManualButtonsWidget(QWidget):
         self.layout.setSpacing(10)
         self.setLayout(self.layout)
 
-    def createButtonTemplate(self, label, style='color: white; border-radius: 8px; border: 1px solid grey;', height=30, bColor='green') -> QPushButton:
-        temp = QPushButton(label)
-        temp.setStyleSheet(f"background-color: {bColor}; {style}")
+    def createButtonTemplate(self, label, style='color: #ffffff; border-radius: 8px; border: 1px solid grey;', height=30, bColor='#6aa84f') -> QPushButton:
+        temp = QPushButton(label, parent=self)
+        # temp.setStyleSheet(f"background-color: {bColor}; {style}")
         temp.setMinimumHeight(height)
+        temp.setEnabled(False)
+        self.buttonsGroup.append(temp)
         return temp
+
+    def setEnabled(self, state):
+        for button in self.buttonsGroup:
+            button.setEnabled(state)
 
 
 class CurrentStateWidget(QWidget):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent=None):
+        super().__init__(parent=parent)
         self.stateText = QLineEdit(self)
         self.stateText.setText('Current State')
         self.stateText.setAlignment(Qt.AlignCenter)
@@ -241,6 +254,8 @@ class CurrentStateWidget(QWidget):
 if __name__ == '__main__':
     selfIP = socket.gethostbyname(socket.gethostname())
     nodeIPs = ["192.168.137.139", "192.168.137.140", "192.168.137.141", "192.168.137.142", "192.168.137.143"]
+    if 'darkmode' in sys.argv:
+        sys.argv += ['-platform', 'windows:darkmode=2']
     app = QApplication(sys.argv)
     mWindow = MainWindow()
     mWindow.show()
