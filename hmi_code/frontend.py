@@ -1,21 +1,18 @@
 import json
-import platform
 import socket
-import subprocess
 import sys
 
+from customWidgets import *
 from PySide6.QtCore import *
 from PySide6.QtGui import *
 from PySide6.QtWidgets import *
-
-from customWidgets import *
 
 CURRENT_NODE = 'x'
 DEBUG = True
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, listenPort=12345, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.setMinimumSize(600, 300)
         self.setWindowTitle("Migration Assistant")
@@ -102,31 +99,46 @@ class RefreshWidget(QWidget):
 
         self.button = QPushButton(icon=QIcon('refresh.png'), parent=self)
         self.button.setIconSize(QSize(size, size))
-        # self.button.connect(self.button, SIGNAL('clicked()'), self.refreshNodesList) # FIX THE FUNCTION FIRST
+        # self.button.clicked.connect(self.refreshNodesList)# FIX THE FUNCTION FIRST
 
-    def refreshNodesList(self) -> None:  # could potentially change so instead of active scan, wait and listen for broadcast messages instead.
-        if platform.system() != 'Linux':
-            print('This program is only supported on Linux')  # TODO: This is a problem. Should work everywhere
-            return
-        global nodeIPs
-        nodeIPs = []
+        self.movie = QMovie("test.gif")
+        self.movie.frameChanged.connect(self.update_icon)
+        self.button.clicked.connect(self.play_gif)
 
-        # -------------------- change so it works in any situation. currently only works when connected to nodes directly on ethernet --------------------
-        # -------------------- if any other devices is connected to the network, it will be added to the list when it should not --------------------
+    def refreshNodesList(self) -> None:
+        """
+        # global nodeIPs
+        # nodeIPs = []
 
-        output = subprocess.run(['ip', 'route'], capture_output=True, text=True).stdout.splitlines()
-        gateIP = output[0].split(' ')[2]  # get the gateway ip of the current network
-        cidr = output[1].split(' ')[0]  # get the cidr of the current network
+        # # -------------------- change so it works in any situation. currently only works when connected to nodes directly on ethernet --------------------
+        # # -------------------- if any other devices is connected to the network, it will be added to the list when it should not --------------------
+        # # -------------------- could be fixed by passively listening for broadcast messages instead. but this way you cant choose offline nodes  ---------
 
-        lines = subprocess.run(['sudo', 'arp-scan', cidr, '-x', '-q', '-g'], capture_output=True, text=True).stdout.splitlines()
-        for line in lines:  # for every found node in the network
-            nodeIPs.append(line.split('\t')[0])  # add the ip of that node to the list
-        print(nodeIPs)
+        # output = subprocess.run(['ip', 'route'], capture_output=True, text=True).stdout.splitlines()
+        # gateIP = output[0].split(' ')[2]  # get the gateway ip of the current network
+        # cidr = output[1].split(' ')[0]  # get the cidr of the current network
 
-        if selfIP in nodeIPs:
-            nodeIPs.remove(selfIP)  # removing my own ip from the list
-        if gateIP in nodeIPs:
-            nodeIPs.remove(gateIP)  # removing gateway ip from the list
+        # lines = subprocess.run(['sudo', 'arp-scan', cidr, '-x', '-q', '-g'], capture_output=True, text=True).stdout.splitlines()
+        # for line in lines:  # for every found node in the network
+        #     nodeIPs.append(line.split('\t')[0])  # add the ip of that node to the list
+        # print(nodeIPs)
+
+        # if selfIP in nodeIPs:
+        #     nodeIPs.remove(selfIP)  # removing my own ip from the list
+        # if gateIP in nodeIPs:
+        #     nodeIPs.remove(gateIP)  # removing gateway ip from the list
+        """
+        pass
+
+    def play_gif(self):
+        if self.movie.state() == QMovie.Running:
+            self.movie.stop()
+            self.button.setIcon(QPixmap("refresh.png"))
+        else:
+            self.movie.start()
+
+    def update_icon(self):
+        self.button.setIcon(self.movie.currentPixmap())
 
 
 class ManualModeWidget(QWidget):
