@@ -42,15 +42,15 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         self.worker.stop()
-        self.worker.wait()
+        self.worker.wait(deadline=500)
         return super().closeEvent(event)
 
 
 class asyncWorker(QThread):
     """This class is used to listen for incoming broadcast status packets from the nodes for the HMI to display"""
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent=None):
+        super().__init__(parent=parent)
         self._running = True
 
     def stop(self):
@@ -59,7 +59,7 @@ class asyncWorker(QThread):
     def run(self, listenPort=12345, sockSize=512):
         global CURRENT_NODE
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # Create a UDP socket
-        sock.settimeout(1)  # Set a timeout for 1 second so the socket doesn't block indefinately when closing the program
+        sock.settimeout(0.3)  # Set a timeout so the socket doesn't block indefinitely when trying to receive data
         sock.bind(('', listenPort))  # Listen on all interfaces on port 12345 for broadcast packets
         self._running = True
 
@@ -72,22 +72,24 @@ class asyncWorker(QThread):
                     mWindow.stateText.stateText.setText(packet['state'])
                     if DEBUG:
                         print(f"State for Node {CURRENT_NODE} is {packet}")
-            except:
+            except socket.timeout:
+                pass
+            except Exception as e:
+                print(e)
                 pass
 
 
 class PowerWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent=parent)
-        self.label = QLabel("Input Power: ")
+        self.label = QLabel("Input Power: ", parent=parent)
 
-        self.power = QLineEdit(self)
-        self.power.setText('Select a Node')
+        self.power = QLineEdit('Select a Node', self)
         self.power.setAlignment(Qt.AlignCenter)
         self.power.setStyleSheet("color: grey; border-radius: 10px; border: 1px solid grey;")
         self.power.setReadOnly(True)
 
-        self.layout = QHBoxLayout()
+        self.layout = QHBoxLayout(self)
         self.layout.addWidget(self.label, 0)
         self.layout.addWidget(self.power, 1)
         self.setLayout(self.layout)
@@ -149,7 +151,7 @@ class ManualModeWidget(QWidget):
         self.check = QToggleSwitch(parent=self)
         self.check.toggled.connect(self.on_toggled)
 
-        self.layout = QHBoxLayout()
+        self.layout = QHBoxLayout(self)
         self.layout.addWidget(self.label, 0, Qt.AlignRight)
         self.layout.addWidget(self.check, 1)
         self.setLayout(self.layout)
@@ -169,7 +171,7 @@ class NodeSelectionWidget(QWidget):
         self.combo_box.currentIndexChanged.connect(self.combo_box_index_changed)
         # self.combo_box.setStyleSheet("color: grey; border-radius: 1px; border: 1px solid grey;")
 
-        self.refreshbutton = RefreshWidget(parent=self)
+        self.refreshButton = RefreshWidget(parent=self)
 
         self.label = QLabel("Currently viewing:")
 
@@ -183,7 +185,7 @@ class NodeSelectionWidget(QWidget):
         self.layout = QHBoxLayout()
         self.layout.addWidget(self.label, 0)
         self.layout.addWidget(self.combo_box, 1)
-        self.layout.addWidget(self.refreshbutton, 2)
+        self.layout.addWidget(self.refreshButton, 2)
         self.layout.addWidget(self.label2, 3, Qt.AlignRight)
         self.layout.addWidget(self.address, 4)
         self.setLayout(self.layout)
