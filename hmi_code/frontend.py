@@ -14,7 +14,8 @@ DEBUG = True
 class MainWindow(QMainWindow):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.setMinimumSize(600, 300)
+        # self.setMinimumSize(600, 300)
+        self.setFixedSize(600, 300)     # Resizing the window horizontally breaks the alignment of the "resize button"
         self.setWindowTitle("Migration Assistant")
 
         self.title_label = QLabel("Migration Assistant", parent=self)
@@ -26,14 +27,16 @@ class MainWindow(QMainWindow):
         self.manualButtons = ManualButtonsWidget(parent=self)
         self.stateText = CurrentStateWidget(parent=self)
 
-        self.layout = QGridLayout(parent=self)
+        self.layout = QGridLayout()
+        # self.layout = QGridLayout(parent=self)        # It appears (parent=self) generates a warning
         self.layout.addWidget(self.title_label, 0, 0, 1, 4)
         self.layout.addWidget(self.nodeSelector, 1, 0, 1, 3)
         self.layout.addWidget(self.powerWidget, 2, 0)
         self.layout.addWidget(self.manualMode, 2, 1)
         self.layout.addWidget(self.stateText, 3, 0)
         self.layout.addWidget(self.manualButtons, 3, 1)
-        self.layoutWidget = QWidget(parent=self)
+        self.layoutWidget = QWidget()
+        # self.layoutWidget = QWidget(parent=self)      # It appears (parent=self) generates a warning
         self.layoutWidget.setLayout(self.layout)
         self.setCentralWidget(self.layoutWidget)
 
@@ -99,11 +102,11 @@ class RefreshWidget(QWidget):
     def __init__(self, parent=None, size=20):
         super().__init__(parent=parent)
 
-        self.button = QPushButton(icon=QIcon('refresh.png'), parent=self)
+        self.button = QPushButton(icon=QIcon('images/refresh.png'), parent=self)
         self.button.setIconSize(QSize(size, size))
         # self.button.clicked.connect(self.refreshNodesList)# FIX THE FUNCTION FIRST
 
-        self.movie = QMovie("test.gif")
+        self.movie = QMovie("images/refresh.gif")
         self.movie.frameChanged.connect(self.update_icon)
         self.button.clicked.connect(self.play_gif)
 
@@ -135,7 +138,7 @@ class RefreshWidget(QWidget):
     def play_gif(self):
         if self.movie.state() == QMovie.Running:
             self.movie.stop()
-            self.button.setIcon(QPixmap("refresh.png"))
+            self.button.setIcon(QPixmap("images/refresh.png"))
         else:
             self.movie.start()
 
@@ -173,9 +176,9 @@ class NodeSelectionWidget(QWidget):
 
         self.refreshButton = RefreshWidget(parent=self)
 
-        self.label = QLabel("Currently viewing:")
-
+        self.label1 = QLabel("Currently viewing:")
         self.label2 = QLabel("IP of Node: ")
+
         self.address = QLineEdit(self)
         self.address.setText('Select a Node')
         self.address.setReadOnly(True)
@@ -183,7 +186,7 @@ class NodeSelectionWidget(QWidget):
         self.address.setStyleSheet("color: grey;border-radius: 10px; border: 1px solid grey;")
 
         self.layout = QHBoxLayout()
-        self.layout.addWidget(self.label, 0)
+        self.layout.addWidget(self.label1, 0)
         self.layout.addWidget(self.combo_box, 1)
         self.layout.addWidget(self.refreshButton, 2)
         self.layout.addWidget(self.label2, 3, Qt.AlignRight)
