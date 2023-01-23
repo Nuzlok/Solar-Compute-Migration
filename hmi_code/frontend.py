@@ -21,10 +21,10 @@ class MainWindow(QMainWindow):
         self.title_label = QLabel("Migration Assistant", parent=self)
         self.title_label.setAlignment(Qt.AlignCenter)
         self.title_label.setStyleSheet("font-size: 40px; font-weight: bold;")
-        self.nodeSelector = NodeSelectionWidget(parent=self)
         self.powerWidget = PowerWidget(parent=self)
         self.manualMode = ManualModeWidget(parent=self)
         self.manualButtons = ManualButtonsWidget(parent=self)
+        self.nodeSelector = NodeSelectionWidget(parent=self)
         self.stateText = CurrentStateWidget(parent=self)
 
         self.layout = QGridLayout()
@@ -153,6 +153,8 @@ class ManualModeWidget(QWidget):
 
         self.check = QToggleSwitch(parent=self)
         self.check.toggled.connect(self.on_toggled)
+        self.check.setChecked(False)
+        self.check.setEnabled(False)
 
         self.layout = QHBoxLayout(self)
         self.layout.addWidget(self.label, 0, Qt.AlignRight)
@@ -200,10 +202,14 @@ class NodeSelectionWidget(QWidget):
             self.address.setText('Loading...')
             mWindow.stateText.stateText.setText('Loading...')
             mWindow.powerWidget.power.setText('Loading...')
+            mWindow.manualMode.check.setEnabled(True)
         else:
             self.address.setText('Select a Node')
             mWindow.stateText.stateText.setText('Select a Node')
             mWindow.powerWidget.power.setText('Select a Node')
+            mWindow.manualMode.check.setChecked(False)
+            mWindow.manualMode.check.setEnabled(False)
+
         print(f"Selected Node: {CURRENT_NODE}")  # Print the selected item's index to the console
 
 
