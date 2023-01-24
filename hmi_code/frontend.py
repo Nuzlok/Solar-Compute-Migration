@@ -73,8 +73,8 @@ class asyncWorker(QThread):
                     mWindow.nodeSelector.address.setText(packet['ip'])
                     mWindow.powerWidget.power.setText(f"{packet['current']*packet['voltage']} W")
                     mWindow.stateText.stateText.setText(packet['state'])
-                    # if DEBUG:#####################################################################################################################
-                    #     print(f"State for Node {CURRENT_NODE} is {packet}")
+                    if DEBUG:
+                        print(f"State for Node {CURRENT_NODE} is {packet}")
             except socket.timeout:
                 pass
             except Exception as e:
@@ -157,24 +157,19 @@ class ManualModeWidget(QWidget):
         self.check.setEnabled(False)
         self.check.setToolTip("Please select a node first")
 
-        # Connect sliding signal to a function that changes the tool tip
-        self.check.stateChanged.connect(self.change_tool_tip)
-
         self.layout = QHBoxLayout(self)
         self.layout.addWidget(self.label, 0, Qt.AlignRight)
         self.layout.addWidget(self.check, 1)
         self.setLayout(self.layout)
 
-    def change_tool_tip(self):
-        if mWindow.manualMode.check.isChecked():
-            mWindow.manualMode.check.setToolTip("Slide to disable manual mode")
-        else:
-            mWindow.manualMode.check.setToolTip("Slide to enable manual mode")
-
-
     def on_toggled(self, state):
         mWindow.manualButtons.setEnabled(state)
         # print(f"Manual Mode {'Enabled' if state else 'Disabled'}")
+
+        if state:
+            mWindow.manualMode.check.setToolTip("Slide to disable manual mode")
+        else:
+            mWindow.manualMode.check.setToolTip("Slide to enable manual mode")
 
 
 class NodeSelectionWidget(QWidget):
