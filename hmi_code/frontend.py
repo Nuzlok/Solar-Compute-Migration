@@ -91,6 +91,7 @@ class PowerWidget(QWidget):
         self.power.setAlignment(Qt.AlignCenter)
         self.power.setStyleSheet("color: grey; border-radius: 10px; border: 1px solid grey;")
         self.power.setReadOnly(True)
+        self.power.setToolTip("The current input power to the selected node in Watts")
 
         self.layout = QHBoxLayout(self)
         self.layout.addWidget(self.label, 0)
@@ -193,6 +194,7 @@ class NodeSelectionWidget(QWidget):
         self.address.setReadOnly(True)
         self.address.setAlignment(Qt.AlignCenter)
         self.address.setStyleSheet("color: grey;border-radius: 10px; border: 1px solid grey;")
+        self.address.setToolTip("The IP address of the selected node")
 
         self.layout = QHBoxLayout()
         self.layout.addWidget(self.label1, 0)
