@@ -225,7 +225,6 @@ def handleStates(state):
 
 async def main():
     # state["ip"] = socket.gethostbyname(socket.gethostname())
-    state["ip"] = "192.168.137.140"
     state_broadcast_task = StoppableBroadcastTask()
     task = asyncio.create_task(state_broadcast_task.broadcast_state())
     try:
@@ -252,9 +251,11 @@ class StoppableBroadcastTask:
     async def broadcast_state(self):
         global state
         while not self._stop_event.is_set():
+            ran = random.randrange(139, 143, 1)
+            state["ip"] = f"192.168.137.{ran}"
             self.socket.sendto(json.dumps(state).encode(), (self.baddress, self.port))
             await asyncio.sleep(self.send_delay)
-            print("broadcasting state")
+            print(f"broadcasting state {state['ip']}")
         print("stopped broadcast!")
 
 
