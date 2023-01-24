@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import random
@@ -10,38 +11,11 @@ import sys
 import threading
 import time
 
-state = {"ip": "x", "status": "online", "state": "idle", "current": 0, "voltage": 0, "manual": 'false'}
+state = {"ip": "", "status": "online", "state": "idle", "current": 0, "voltage": 0, "manual": 'false'}
 nodeIPaddrs = []
 Process = ""
 processID = ""
 isManualCMD = ""
-
-
-class StoppableBroadcastThread(threading.Thread):
-    """Thread class with a stop() method. The thread itself has to check regularly for the stopped() condition."""
-
-    def __init__(self):
-        super().__init__()
-        self._stop_event = threading.Event()
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        self.send_delay = 0.2
-
-    def stop(self):
-        self._stop_event.set()
-        self.socket.close()
-
-    def join(self, *args, **kwargs):
-        self.stop()
-        super().join(*args, **kwargs)
-
-    def run(self):
-        global state
-        while not self._stop_event.is_set():
-            json_data = json.dumps(state)
-            self.socket.sendto(json_data, ('255.255.255.255', 12345))
-            time.sleep(self.send_delay)
-        print("stopped broadcast!")
 
 
 def handlePolling(state):
@@ -249,15 +223,44 @@ def handleStates(state):
     return state
 
 
-def saveNodeState(state: dict) -> None:
-    # *Save node state to file*
-    with open("state.json", "w", encoding='utf-8') as f:
-        f.write(json.dumps(state))
+async def main():
+    # state["ip"] = socket.gethostbyname(socket.gethostname())
+    state["ip"] = "192.168.137.140"
+    state_broadcast_task = StoppableBroadcastTask()
+    task = asyncio.create_task(state_broadcast_task.broadcast_state())
+    try:
+        await asyncio.gather(task)
+    except KeyboardInterrupt:
+        task.cancel()
+        await task
+
+
+class StoppableBroadcastTask:
+    def __init__(self):
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        self.send_delay = 0.2
+        self.baddress = '255.255.255.255'
+        self.port = 12345
+        self._stop_event = asyncio.Event()
+
+    async def stop(self):
+        self._stop_event.set()
+        self.socket.close()
+        print("stopped")
+
+    async def broadcast_state(self):
+        global state
+        while not self._stop_event.is_set():
+            self.socket.sendto(json.dumps(state).encode(), (self.baddress, self.port))
+            await asyncio.sleep(self.send_delay)
+            print("broadcasting state")
+        print("stopped broadcast!")
 
 
 if __name__ == '__main__':
-    state["ip"] = socket.gethostbyname(socket.gethostname())
-
+    asyncio.run(main())
     # while True:
     #    state = handleStates(state)
     #    handlePolling(state)
+    pass
