@@ -1,6 +1,8 @@
-import json
+import pickle
 import socket
 import sys
+from enum import Enum, auto
+from ipaddress import IPv4Address
 
 from customWidgets import *
 from PySide6.QtCore import *
@@ -9,6 +11,23 @@ from PySide6.QtWidgets import *
 
 CURRENT_NODE = 'x'
 DEBUG = True
+
+
+class State(Enum):
+    IDLE = auto()			# Node is idle and ready to accept
+    BUSY = auto()			# Node is busy with processes and cannot accept processes
+    MIGRATING = auto()  	# Node is migrating to another and cannot accept processes
+    SHUTDOWN = auto()		# Node is shutting down and cannot accept processes
+
+    def __str__(self):
+        if self == self.IDLE:
+            return "idle"
+        if self == self.BUSY:
+            return "busy"
+        if self == self.MIGRATING:
+            return "migrating"
+        if self == self.SHUTDOWN:
+            return "shutdown"
 
 
 class MainWindow(QMainWindow):
@@ -62,17 +81,18 @@ class asyncWorker(QThread):
     def run(self, listenPort=12345, sockSize=512):
         global CURRENT_NODE
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # Create a UDP socket
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # Allow multiple sockets to use the same PORT number
         sock.settimeout(0.3)  # Set a timeout so the socket doesn't block indefinitely when trying to receive data
         sock.bind(('', listenPort))  # Listen on all interfaces on port 12345 for broadcast packets
         self._running = True
 
         while self._running:
             try:
-                packet = json.loads(sock.recvfrom(sockSize)[0].decode('utf-8'))
+                packet = pickle.loads(sock.recvfrom(sockSize)[0])
                 if CURRENT_NODE in packet['ip']:  # TODO: Fix this if statement (if the packet is from the currently selected node). This is a hacky way to do it
                     mWindow.nodeSelector.address.setText(packet['ip'])
                     mWindow.powerWidget.power.setText(f"{packet['current']*packet['voltage']} W")
-                    mWindow.stateText.stateText.setText(packet['state'])
+                    mWindow.stateText.stateText.setText(packet['state'].__str__())
                     if DEBUG:
                         print(f"State for Node {CURRENT_NODE} is {packet}")
             except socket.timeout:

@@ -16,6 +16,16 @@ class State(Enum):
     MIGRATING = auto()  	# Node is migrating to another and cannot accept processes
     SHUTDOWN = auto()		# Node is shutting down and cannot accept processes
 
+    def __str__(self):
+        if self == self.IDLE:
+            return "idle"
+        if self == self.BUSY:
+            return "busy"
+        if self == self.MIGRATING:
+            return "migrating"
+        if self == self.SHUTDOWN:
+            return "shutdown"
+
 
 selfState = {"ip": "", "status": "online", "state": State.IDLE, "current": 0, "voltage": 0, "manual": 'false'}
 uniqueOtherNodeStatuses = {}
@@ -305,6 +315,7 @@ class BroadcastReceiver(threading.Thread):
         self.listenPort = 12345
         self.sockSize = 512
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # Create a UDP socket
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # Allow the socket to be reused
         self.sock.settimeout(1)  # Set a timeout so the socket doesn't block indefinitely when trying to receive data
         self.sock.bind(('', self.listenPort))  # Listen on all interfaces on port 12345 for broadcast packets
         self.timeout_reset_counter = 8  # every 8 timeouts, clear the uniqueOtherNodeStatuses dictionary to remove old nodes
