@@ -1,24 +1,39 @@
-import asyncio
-import json
 import os
+import pickle
 import random
-import shutil
-import signal
 import socket
-import string
 import subprocess
 import sys
 import threading
 import time
+from enum import Enum, auto
+from ipaddress import IPv4Address
 
-state = {"ip": "", "status": "online", "state": "idle", "current": 0, "voltage": 0, "manual": 'false'}
+
+class State(Enum):
+    IDLE = auto()			# Node is idle and ready to accept
+    BUSY = auto()			# Node is busy with processes and cannot accept processes
+    MIGRATING = auto()  	# Node is migrating to another and cannot accept processes
+    SHUTDOWN = auto()		# Node is shutting down and cannot accept processes
+
+
+selfState = {"ip": "", "status": "online", "state": State.IDLE, "current": 0, "voltage": 0, "manual": 'false'}
+uniqueOtherNodeStatuses = {}
 nodeIPaddrs = []
-Process = ""
 processID = ""
 isManualCMD = ""
+EXIT = False
 
 
-def handlePolling(state):
+class Process:
+    # TODO: Implement Process class.
+    # Process class.
+    # Contains all the information about a process.
+    # This class is used to control the process.
+    pass
+
+
+def handlePolling():
     """Respond to polling from other nodes with state information"""
     # *TCP current state to polling node*
     pass
@@ -28,7 +43,7 @@ def waitForProcessCMD() -> tuple:
     return True, "process"
 
 
-def startProcessThread(process):
+def startProcessThread(proc):
     pass
 
 
@@ -95,14 +110,16 @@ def manualInput(input) -> bool:
     return False
 
 
-def waitForMigrateCMD() -> tuple[bool, bool]:
-    """Handle migrate command"""
-    if (isLossOfPower()):  # Check for loss of power or manual input command
-        return True, False
-    elif manualInput():
-        return True, True
-    else:
-        return False, False
+def waitForMigrateCMD() -> bool:
+    """
+    Handle migrate command. Returns true if the process should be migrated.
+    Migration is triggered by a loss of power or a manual migate command through the HMI.
+    """
+    if isLossOfPower():  # Check for loss of power or manual input command
+        return True
+    elif manualInput():  # Check for manual input command from HMI
+        return True
+    return False
 
 
 def sendFinishTransferFlag(username="pi", ip="1", password="pi", path=""):
@@ -113,10 +130,13 @@ def sendFinishTransferFlag(username="pi", ip="1", password="pi", path=""):
         print("Failed to update file")
 
 
-def pollNodeforState(address) -> str:
-    """Poll node at given address to get state"""
+def pollNodeforState(address: str) -> str:
+    """
+    Poll node at given address to get state.
+    Used to confirm node status before migrating process to it.
+    """
     # *TCP address for Node State*
-    statefromNode = "idle"
+    statefromNode = State.IDLE
     return statefromNode
 
 
@@ -130,7 +150,7 @@ def waitForProcessCMD():
     pass
 
 
-def CheckpointandSaveProcessToDisk(processID, process):
+def CheckpointandSaveProcessToDisk(processID: int, proc: Process):
     """Handle case of no available nodes, checkpoint process to current working directory"""
     # *Run bash Script to checkpoint node and Save to receiving directory on current node*
     # *That way, on startup any files inside the directory will immediately be restored from
@@ -138,28 +158,28 @@ def CheckpointandSaveProcessToDisk(processID, process):
     pass
 
 
-def checkpointAndMigrateProcessToNode(processID, process, ipToSend):
+def checkpointAndMigrateProcessToNode(processID: int, proc: Process, ipToSend):
     # Handle checkpointing and migration
     # *Run bash Script to checkpoint node and SCP to address in specific directory*
     # *Delete process and supporting files on current node*
     pass
 
 
-def migrateProcessToAvaliableNode(processID, process):
-    global state
+def migrateProcessToAvaliableNode(processID: int, proc: Process):
+    global selfState
     ipToSend = None
     for address in nodeIPaddrs:
-        state = pollNodeforState(address)
-        if state == "idle":
+        selfState = pollNodeforState(address)
+        if selfState == State.IDLE:
             if ipToSend == None:
                 ipToSend = address
             else:
                 # * Possible comparison for other factors like time, weather, etc.*
                 ipToSend = address
     if ipToSend == None:
-        CheckpointandSaveProcessToDisk(processID, process)
+        CheckpointandSaveProcessToDisk(processID, proc)
     else:
-        checkpointAndMigrateProcessToNode(processID, process, ipToSend)
+        checkpointAndMigrateProcessToNode(processID, proc, ipToSend)
 
 
 def getProcessID(proc) -> int:
@@ -168,20 +188,18 @@ def getProcessID(proc) -> int:
     return 0  # pid
 
 
-def criuDump(proc) -> bool:
+def criuDump(proc, command=None) -> bool:
     result = subprocess.check_output(['sudo', 'criu', 'dump', '-t', f'$(pgrep {proc})', '-v4', '-o', 'output.log', '&&', 'echo', 'OK'])
     if result == "OK":
         return True
-    else:
-        raise Exception(f"CRIU Dump Result: '{result}', Expected: OK")
+    raise Exception(f"CRIU Dump Result: '{result}', Expected: OK")
 
 
-def criuRestore(path) -> bool:
+def criuRestore(path, command=None) -> bool:
     result = subprocess.check_output(['sudo', 'criu', 'restore', '-d', '-v4', '-o', 'restore.log', '&&', 'echo', 'OK'])
     if result == "OK":
         return True
-    else:
-        raise Exception(f"CRIU Restore Result: '{result}', Expected: OK")
+    raise Exception(f"CRIU Restore Result: '{result}', Expected: OK")
 
 
 def sendProcessResultsToUser():
@@ -190,78 +208,120 @@ def sendProcessResultsToUser():
     pass
 
 
-def handleStates(state):
+def handleStates():
     """Main FSM"""
-    match state:
-        case "idle":  # Idle State, should look inside project directory for files to run
-            processReceived, process = waitForProcessCMD()
-            if processReceived:
-                state = "processing"
+    global selfState
+    match selfState["state"]:
+        case State.IDLE:  # idle State, should look inside project directory for files to run
+            process = waitForProcessCMD()
+            if process:
+                selfState = State.BUSY
                 startProcessThread(process)
 
-        case "processing":
-            migrate, isManualCMD = waitForMigrateCMD()
-            if migrate:
-                state = "migrating"
+        case State.BUSY:
+            migrateReceived: bool = waitForMigrateCMD()
+            if migrateReceived:
+                selfState = State.MIGRATING
                 processID = getProcessID()  # If complete, send output logs or finished process results back to user
             elif process.isComplete():
-                state = "idle"
+                selfState = State.IDLE
                 sendProcessResultsToUser()
 
-        case "migrating":
-            migrateProcessToAvaliableNode(processID, process)
+        case State.MIGRATING:
+            migrateProcessToAvaliableNode(processID: int, process)
             # if migration command is manual, then keep the node in idle, else send to shutdown state
             if isManualCMD:
-                state = "idle"
+                selfState = State.IDLE
             else:
-                state = "shutdown"
+                selfState = "shutdown"
         case "shutdown":
             # Node will shut down eventually with loss of power, but potentially leaving the option to return to
             # Idle state if power does return and node somehow still can operate
             if not isLossOfPower():
-                state = "idle"
-    return state
+                selfState = State.IDLE
+    return selfState
 
 
-async def main():
+def main():
     # state["ip"] = socket.gethostbyname(socket.gethostname())
-    state_broadcast_task = StoppableBroadcastTask()
-    task = asyncio.create_task(state_broadcast_task.broadcast_state())
     try:
-        await asyncio.gather(task)
-    except KeyboardInterrupt:
-        task.cancel()
-        await task
+        broadcaster = BroadcastSender()  # Start broadcast sender and receiver threads
+        broadcaster.start()
+        receiver = BroadcastReceiver()
+        receiver.start()
+
+        while True:
+            # handleStates()  # Main FSM
+            pass
+
+    except Exception as e:  # Handle any exceptions
+        broadcaster.stop()
+        broadcaster.join()
+        receiver.stop()
+        receiver.join()
+        print(e)
+        print("Exiting...")
+        sys.exit(1)
 
 
-class StoppableBroadcastTask:
-    def __init__(self):
+class BroadcastSender(threading.Thread):
+    def __init__(self, address='255.255.255.255', port=12345):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         self.send_delay = 0.2
-        self.baddress = '255.255.255.255'
-        self.port = 12345
-        self._stop_event = asyncio.Event()
+        self.baddress = address
+        self.port = port
+        self._running = True
+        super().__init__()
 
-    async def stop(self):
-        self._stop_event.set()
-        self.socket.close()
-        print("stopped")
-
-    async def broadcast_state(self):
-        global state
-        while not self._stop_event.is_set():
+    def run(self):
+        global selfState, EXIT
+        while self._running:
             ran = random.randrange(139, 143, 1)
-            state["ip"] = f"192.168.137.{ran}"
-            self.socket.sendto(json.dumps(state).encode(), (self.baddress, self.port))
-            await asyncio.sleep(self.send_delay)
-            print(f"broadcasting state {state['ip']}")
-        print("stopped broadcast!")
+            selfState["ip"] = f"192.168.137.{ran}"  # this is temporary for testing. will be replaced with actual ip when we have a network-------------
+            self.socket.sendto(pickle.dumps(selfState).encode(), (self.baddress, self.port))
+            time.sleep(self.send_delay)
+            print(f"broadcasting state {selfState['ip']}")
+        print("Closing Socket!")
+        self.socket.close()
+        print("Stopped Broadcast!")
+
+    def stop(self):
+        self._running = False
 
 
-if __name__ == '__main__':
-    asyncio.run(main())
-    # while True:
-    #    state = handleStates(state)
-    #    handlePolling(state)
-    pass
+class BroadcastReceiver(threading.Thread):
+    """This class is used to listen for incoming broadcast status packets from the nodes so each node can know the status of the other nodes"""
+
+    def __init__(self):
+        self._running = True
+        self.listenPort = 12345
+        self.sockSize = 512
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # Create a UDP socket
+        self.sock.settimeout(1)  # Set a timeout so the socket doesn't block indefinitely when trying to receive data
+        self.sock.bind(('', self.listenPort))  # Listen on all interfaces on port 12345 for broadcast packets
+        self.timeout_reset_counter = 8  # every 8 timeouts, clear the uniqueOtherNodeStatuses dictionary to remove old nodes
+        super().__init__()
+
+    def run(self):
+        global uniqueOtherNodeStatuses
+
+        while self._running:
+            try:
+                packet = pickle.loads(self.sock.recvfrom(self.sockSize)[0].decode('utf-8'))
+                # TODO: Ignore packets that come from self ip address. This does not work yet because the broadcast ip is randomly generated for testing ---------------
+                uniqueOtherNodeStatuses[packet["ip"]] = packet
+                # print(list(uniqueOtherNodeStatuses.values())) # Print the packet for debugging purposes
+            except socket.timeout:
+                if self.timeout_reset_counter-1 == 0:
+                    uniqueOtherNodeStatuses = {}  # If we don't receive any data within the timeout period, clear the uniqueOtherNodeStatuses dictionary
+                    self.timeout_reset_counter = 8
+            except Exception as e:  # If we receive any other exception, just print it and keep listening
+                print(e)
+
+    def stop(self):
+        self._running = False
+
+
+if __name__ == '__main__':  # if we are running in the main context
+    main()  # run the main function. python is weird and this is how you do it
