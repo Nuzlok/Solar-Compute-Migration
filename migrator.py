@@ -228,7 +228,7 @@ def handleStates():
                 sendProcessResultsToUser()
 
         case State.MIGRATING:
-            migrateProcessToAvaliableNode(processID: int, process)
+            migrateProcessToAvaliableNode(processID, process)
             # if migration command is manual, then keep the node in idle, else send to shutdown state
             if isManualCMD:
                 selfState = State.IDLE
@@ -253,6 +253,13 @@ def main():
         while True:
             # handleStates()  # Main FSM
             pass
+    except KeyboardInterrupt:  # Handle keyboard interrupts
+        broadcaster.stop()
+        broadcaster.join()
+        receiver.stop()
+        receiver.join()
+        print("Exiting...")
+        sys.exit(0)
 
     except Exception as e:  # Handle any exceptions
         broadcaster.stop()
@@ -279,7 +286,7 @@ class BroadcastSender(threading.Thread):
         while self._running:
             ran = random.randrange(139, 143, 1)
             selfState["ip"] = f"192.168.137.{ran}"  # this is temporary for testing. will be replaced with actual ip when we have a network-------------
-            self.socket.sendto(pickle.dumps(selfState).encode(), (self.baddress, self.port))
+            self.socket.sendto(pickle.dumps(selfState), (self.baddress, self.port))
             time.sleep(self.send_delay)
             print(f"broadcasting state {selfState['ip']}")
         print("Closing Socket!")
@@ -308,7 +315,7 @@ class BroadcastReceiver(threading.Thread):
 
         while self._running:
             try:
-                packet = pickle.loads(self.sock.recvfrom(self.sockSize)[0].decode('utf-8'))
+                packet = pickle.loads(self.sock.recvfrom(self.sockSize)[0])
                 # TODO: Ignore packets that come from self ip address. This does not work yet because the broadcast ip is randomly generated for testing ---------------
                 uniqueOtherNodeStatuses[packet["ip"]] = packet
                 # print(list(uniqueOtherNodeStatuses.values())) # Print the packet for debugging purposes
