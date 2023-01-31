@@ -11,6 +11,7 @@ from PySide6.QtWidgets import *
 
 CURRENT_NODE = 'x'
 DEBUG = True
+PACKET = {}
 
 
 class State(Enum):
@@ -79,7 +80,7 @@ class asyncWorker(QThread):
         self._running = False
 
     def run(self, listenPort=12345, sockSize=512):
-        global CURRENT_NODE
+        global CURRENT_NODE, PACKET
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # Create a UDP socket
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # Allow multiple sockets to use the same PORT number
         sock.settimeout(0.3)  # Set a timeout so the socket doesn't block indefinitely when trying to receive data
@@ -88,13 +89,13 @@ class asyncWorker(QThread):
 
         while self._running:
             try:
-                packet = pickle.loads(sock.recvfrom(sockSize)[0])
-                if CURRENT_NODE in packet['ip']:  # TODO: Fix this if statement (if the packet is from the currently selected node). This is a hacky way to do it
-                    mWindow.nodeSelector.address.setText(packet['ip'])
-                    mWindow.powerWidget.power.setText(f"{packet['current']*packet['voltage']} W")
-                    mWindow.stateText.stateText.setText(packet['state'].__str__())
+                PACKET = pickle.loads(sock.recvfrom(sockSize)[0])
+                if CURRENT_NODE in PACKET['ip']:  # TODO: Fix this if statement (if the packet is from the currently selected node). This is a hacky way to do it
+                    mWindow.nodeSelector.address.setText(PACKET['ip'])
+                    mWindow.powerWidget.power.setText(f"{PACKET['current']*PACKET['voltage']} W")
+                    mWindow.stateText.stateText.setText(str(PACKET['state']))
                     if DEBUG:
-                        print(f"State for Node {CURRENT_NODE} is {packet}")
+                        print(f"State for Node {CURRENT_NODE} is {PACKET}")
             except socket.timeout:
                 pass
             except Exception as e:

@@ -9,6 +9,10 @@ import time
 from enum import Enum, auto
 from ipaddress import IPv4Address
 
+from gpiozero import SmoothedInputDevice  # to read voltage/current from GPIO
+
+# https://gpiozero.readthedocs.io/en/stable/api_input.html#smoothedinputdevice
+
 
 class State(Enum):
     IDLE = auto()			# Node is idle and ready to accept
@@ -27,7 +31,7 @@ class State(Enum):
             return "shutdown"
 
 
-selfState = {"ip": "", "status": "online", "state": State.IDLE, "current": 0, "voltage": 0, "manual": 'false'}
+selfState = {"ip": "", "status": "online", "state": State.IDLE, "current": 0, "voltage": 0, "manual": False, "migrate_cmd": False, "reboot_cmd": False, "shutdown_cmd": False, }
 uniqueOtherNodeStatuses = {}
 nodeIPaddrs = []
 processID = ""
@@ -36,64 +40,54 @@ EXIT = False
 
 
 class Process:
-    # TODO: Implement Process class.
-    # Process class.
-    # Contains all the information about a process.
-    # This class is used to control the process.
-    pass
+    """
+    Process class.
+    Contains all the information about a process.
+    This class is used to control the process.
+    """
+
+    def __init__(self) -> None:
+        pass
+
+    def getPID(self) -> int:
+        return 0
+
+    def getProcessName(self) -> str:
+        return ""
+
+    def getProcessState(self) -> str:
+        return ""
+
+    def terminate(self):
+        pass
+
+    def start(self):
+        pass
 
 
-def handlePolling():
-    """Respond to polling from other nodes with state information"""
-    # *TCP current state to polling node*
-    pass
+def readPowerfromGPIO() -> tuple[float, float]:
+    """
+    Read voltage and current from GPIO
+    returns voltage and current as floats in that order
+    """
+    return 0.0, 0.0
 
 
-def waitForProcessCMD() -> tuple:
-    return True, "process"
-
-
-def startProcessThread(proc):
-    pass
-
-
-def handleMigration():
-    pass
-
-
-def handleReboot():
-    pass
-
-
-def handleShutdown():
-    pass
-
-
-def readVoltagefromGPIO() -> float:
-    """Read voltage from GPIO"""
-    return 0.0
-
-
-def readCurrentfromGPIO() -> float:
-    """Read current from GPIO"""
-    return 0.0
-
-
-def isLossOfPower() -> bool:
-    """Decide when node is losing power"""
-    voltage = readVoltagefromGPIO()
-    current = readCurrentfromGPIO()
-    threshold = 0.5
+def isLossOfPower(threshold=0.5) -> bool:
+    """
+    Decide when node is losing power by reading 
+    voltage and current from GPIO pins
+    """
+    voltage, current = readPowerfromGPIO()
     return (voltage < threshold or current < threshold)
 
 
-def startProcessThread(process):
-    """Handle starting a process"""
-    # If no checkpoint
-    # *Start Process in separate thread*
-    # Else if checkpoint
-    # *Start process in separate thread and resume from checkpoint*
-    pass
+def startProcessThread(proc: Process) -> bool:
+    """
+    Start the received process in a new thread
+    return true if successful
+    """
+    return False
 
 
 def NetworkScan() -> list:
@@ -127,7 +121,8 @@ def waitForMigrateCMD() -> bool:
     """
     if isLossOfPower():  # Check for loss of power or manual input command
         return True
-    elif manualInput():  # Check for manual input command from HMI
+    if selfState["manual"] and selfState["migrate_cmd"] == True:
+        selfState["migrate_cmd"] = False
         return True
     return False
 
@@ -150,14 +145,13 @@ def pollNodeforState(address: str) -> str:
     return statefromNode
 
 
-def waitForProcessCMD():
-    # #Check specified directory for files
-    # Process = (check directory, if not empty, then it should contain a process and checkpoint)
-    # If Process != none
-    # Return Process, true
-    # Else
-    # Return none, false
-    pass
+def waitForProcess(directory=None) -> Process:
+    # Check specified directory for files of a process with finish flag
+    # if files are found with the flag, create a process object and return it
+    # else return None
+
+    # *Check directory for files of a process*
+    return None
 
 
 def CheckpointandSaveProcessToDisk(processID: int, proc: Process):
@@ -223,10 +217,12 @@ def handleStates():
     global selfState
     match selfState["state"]:
         case State.IDLE:  # idle State, should look inside project directory for files to run
-            process = waitForProcessCMD()
-            if process:
-                selfState = State.BUSY
-                startProcessThread(process)
+            process = waitForProcess()
+            if process is not None:
+                if startProcessThread(process):
+                    selfState = State.BUSY
+                else:
+                    raise Exception("Failed to start process thread. Process not started.")
 
         case State.BUSY:
             migrateReceived: bool = waitForMigrateCMD()
