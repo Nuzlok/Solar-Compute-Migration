@@ -9,9 +9,9 @@ import time
 from enum import Enum, auto
 from ipaddress import IPv4Address
 
-from gpiozero import SmoothedInputDevice  # to read voltage/current from GPIO
+from gpiozero import MCP3008
 
-# https://gpiozero.readthedocs.io/en/stable/api_input.html#smoothedinputdevice
+# https://gpiozero.readthedocs.io/en/stable/api_input.html#mcp3008
 
 
 class State(Enum):
@@ -46,8 +46,13 @@ class Process:
     This class is used to control the process.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, procName: str, IP: IPv4Address) -> None:
+        self.procName = procName
+        self.aliasIP = IP
         pass
+
+    def __str__(self) -> str:
+        return f"Process: <Name:{self.procName}, PID:{self.getPID()}, IP:{self.aliasIP}, State:{self.getProcessState()}>"
 
     def getPID(self) -> int:
         return 0
@@ -58,6 +63,9 @@ class Process:
     def getProcessState(self) -> str:
         return ""
 
+    def getAliasedIP(self) -> str:
+        return IPv4Address("0.0.0.0")
+
     def terminate(self):
         pass
 
@@ -65,21 +73,32 @@ class Process:
         pass
 
 
-def readPowerfromGPIO() -> tuple[float, float]:
+class ADC:
     """
-    Read voltage and current from GPIO
-    returns voltage and current as floats in that order
+    `Note: This Class is not yet calibrated and should only be run on a raspberry pi`\n
+    Read voltage and current from GPIO pins.
+    This class provides function to calculate the power.
     """
-    return 0.0, 0.0
+
+    def __init__(self):
+        # TODO: calibrate voltage and current values, and scaling factor
+        self.voltage = MCP3008(channel=2, differential=False, max_voltage=3.3)
+        self.current = MCP3008(channel=1, differential=True, max_voltage=3.3)  # differential on channel 1 and 0, might need to change to pin 0 if output is inverted
+
+    def readPower(self) -> tuple:
+        if not os.uname().machine.startswith("arm"):
+            raise Exception("ADC can only be run on a raspberry pi")
+        return self.voltage.value, self.current.value
 
 
-def isLossOfPower(threshold=0.5) -> bool:
+def isLossOfPower(CThreshold=0.5, VThreshold=0.5) -> bool:
     """
     Decide when node is losing power by reading 
     voltage and current from GPIO pins
+    `Note: This function is not yet calibrated`
     """
-    voltage, current = readPowerfromGPIO()
-    return (voltage < threshold or current < threshold)
+    voltage, current = ADC.readPower()
+    return (voltage < VThreshold or current < CThreshold)
 
 
 def startProcessThread(proc: Process) -> bool:
@@ -135,7 +154,7 @@ def sendFinishTransferFlag(username="pi", ip="1", password="pi", path=""):
         print("Failed to update file")
 
 
-def pollNodeforState(address: str) -> str:
+def pollNodeforState(address: IPv4Address) -> str:
     """
     Poll node at given address to get state.
     Used to confirm node status before migrating process to it.
@@ -154,7 +173,7 @@ def waitForProcess(directory=None) -> Process:
     return None
 
 
-def CheckpointandSaveProcessToDisk(processID: int, proc: Process):
+def checkpointandSaveProcessToDisk(processID: int, proc: Process):
     """Handle case of no available nodes, checkpoint process to current working directory"""
     # *Run bash Script to checkpoint node and Save to receiving directory on current node*
     # *That way, on startup any files inside the directory will immediately be restored from
@@ -162,10 +181,25 @@ def CheckpointandSaveProcessToDisk(processID: int, proc: Process):
     pass
 
 
-def checkpointAndMigrateProcessToNode(processID: int, proc: Process, ipToSend):
+def checkpointAndMigrateProcessToNode(processID: int, proc: Process):
     # Handle checkpointing and migration
     # *Run bash Script to checkpoint node and SCP to address in specific directory*
     # *Delete process and supporting files on current node*
+
+    # 1. Checkpoint process
+    # 2. remove IP alias from current node
+    # 3. rsync process directory to receiving node
+    # 3. Send finish flag to node
+    # 4. Delete process and supporting files on current node
+
+    if checkpointandSaveProcessToDisk(processID, proc) == False:
+        raise Exception("Failed to checkpoint process")
+    if handleIPaliasing(proc.getAliasedIP(), False) == False:
+        raise Exception("Failed to remove IP alias from current node")
+
+
+def handleIPaliasing(address: IPv4Address, add: bool) -> bool:
+    # *Run bash script to add IP alias to current node*
     pass
 
 
@@ -181,7 +215,7 @@ def migrateProcessToAvaliableNode(processID: int, proc: Process):
                 # * Possible comparison for other factors like time, weather, etc.*
                 ipToSend = address
     if ipToSend == None:
-        CheckpointandSaveProcessToDisk(processID, proc)
+        checkpointandSaveProcessToDisk(processID, proc)
     else:
         checkpointAndMigrateProcessToNode(processID, proc, ipToSend)
 
