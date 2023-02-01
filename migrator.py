@@ -128,11 +128,6 @@ def NetworkScan() -> list:
     return nodeIPs
 
 
-def manualInput(input) -> bool:
-    """Handle manual input from user"""
-    return False
-
-
 def waitForMigrateCMD() -> bool:
     """
     Handle migrate command. Returns true if the process should be migrated.
@@ -181,26 +176,43 @@ def checkpointandSaveProcessToDisk(processID: int, proc: Process):
     pass
 
 
-def checkpointAndMigrateProcessToNode(processID: int, proc: Process):
-    # Handle checkpointing and migration
-    # *Run bash Script to checkpoint node and SCP to address in specific directory*
-    # *Delete process and supporting files on current node*
+def checkpointAndMigrateProcessToNode(proc: Process, receivingIP: IPv4Address):
+    """
+    Handle checkpointing and migration
+    1. Checkpoint process
+    2. confirm node is available and ready to receive process
+    3. remove IP alias from current node
+    4. rsync process directory to receiving node
+    5. Send finish flag to node
+    6. Delete process and supporting files on current node
+    """
 
-    # 1. Checkpoint process
-    # 2. remove IP alias from current node
-    # 3. rsync process directory to receiving node
-    # 3. Send finish flag to node
-    # 4. Delete process and supporting files on current node
-
-    if checkpointandSaveProcessToDisk(processID, proc) == False:
+    if checkpointandSaveProcessToDisk(proc) == False:
         raise Exception("Failed to checkpoint process")
+
+    if pollNodeforState(receivingIP) != State.IDLE:
+        raise Exception("Receiving node is not ready to receive process")
+
     if handleIPaliasing(proc.getAliasedIP(), False) == False:
         raise Exception("Failed to remove IP alias from current node")
+
+    if rsyncProcessToNode(proc, receivingIP) == False:
+        raise Exception("Failed to rsync process to receiving node")
+
+    if sendFinishTransferFlag(receivingIP) == False:
+        raise Exception("Failed to send finish flag to receiving node")
+
+    if deleteProcessFromDisk(proc) == False:
+        raise Exception("Failed to delete process from disk")
 
 
 def handleIPaliasing(address: IPv4Address, add: bool) -> bool:
     # *Run bash script to add IP alias to current node*
-    pass
+    return True
+    if add:
+        return os.system(f"ip addr add {address}/24 dev eth0")
+    else:
+        return os.system(f"ip addr del {address}/24 dev eth0")
 
 
 def migrateProcessToAvaliableNode(processID: int, proc: Process):
