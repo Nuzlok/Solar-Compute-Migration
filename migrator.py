@@ -8,69 +8,95 @@ import threading
 import time
 from enum import Enum, auto
 from ipaddress import IPv4Address
+from typing import List
 
 from gpiozero import MCP3008
 
 # https://gpiozero.readthedocs.io/en/stable/api_input.html#mcp3008
 
 
-class State(Enum):
+class NodeState(Enum):
     IDLE = auto()			# Node is idle and ready to accept
     BUSY = auto()			# Node is busy with processes and cannot accept processes
     MIGRATING = auto()  	# Node is migrating to another and cannot accept processes
     SHUTDOWN = auto()		# Node is shutting down and cannot accept processes
 
     def __str__(self):
-        if self == self.IDLE:
-            return "idle"
-        if self == self.BUSY:
-            return "busy"
-        if self == self.MIGRATING:
-            return "migrating"
-        if self == self.SHUTDOWN:
-            return "shutdown"
+        return self.name
 
 
-selfState = {"ip": "", "status": "online", "state": State.IDLE, "current": 0, "voltage": 0, "manual": False, "migrate_cmd": False, "reboot_cmd": False, "shutdown_cmd": False, }
+class ProcState(Enum):
+    RUNNING = auto()  # Process is running
+    WAITING = auto()  # Process is waiting to be started
+    TERMINATED = auto()  # Process is terminated forcefully
+    COMPLETED = auto()  # Process is completed successfully
+    ERROR = auto()  # Process is terminated due to an error
+    NONE = auto()  # THere is no process
+
+    def __str__(self):
+        return self.name
+
+
+selfState = {"ip": "", "status": "online", "state": NodeState.IDLE, "current": 0, "voltage": 0, "manual": False, "migrate_cmd": False, "reboot_cmd": False, "shutdown_cmd": False, }
 uniqueOtherNodeStatuses = {}
 nodeIPaddrs = []
 processID = ""
 isManualCMD = ""
 EXIT = False
+DIRECTORY = "/home/pi/ReceivedProcesses/"
 
 
 class Process:
     """
     Process class.
-    Contains all the information about a process.
-    This class is used to control the process.
+    Contains all the information about a process and provides functions to start, stop, and terminate the process.
     """
 
-    def __init__(self, procName: str, IP: IPv4Address) -> None:
-        self.procName = procName
-        self.aliasIP = IP
-        pass
+    def __init__(self, name: str):
+        print("TODO: process init not complete yet")
+
+        self.procName = name
+        self.location = DIRECTORY + name
+        self.procState = ProcState.NONE
+        self.pid = None
+        # self.aliasIP = getAvailableIP()  # TODO: get an available IP address for the process (check list of used IPs and invert that list)
 
     def __str__(self) -> str:
         return f"Process: <Name:{self.procName}, PID:{self.getPID()}, IP:{self.aliasIP}, State:{self.getProcessState()}>"
 
-    def getPID(self) -> int:
-        return 0
+    def getPID(self) -> int | None:
+        """Get the PID of the process. returns None if process is not running"""
+        # return self.pid
+        return None
 
     def getProcessName(self) -> str:
-        return ""
+        """Get the name of the process. This is the name of the executable, not the PID or anything else"""
+        return self.procName
 
-    def getProcessState(self) -> str:
-        return ""
+    def getProcessState(self) -> ProcState:
+        """Get the state of the process (running, stopped, etc)"""
+        return ProcState.NONE
 
-    def getAliasedIP(self) -> str:
+    def getAliasedIP(self) -> IPv4Address:
+        """Get the IP address of the process"""
         return IPv4Address("0.0.0.0")
 
-    def terminate(self):
-        pass
+    def getDirectory(self) -> str | None:
+        """Get the directory of the process. returns None if process does not have a directory"""
+        return self.location
 
-    def start(self):
-        pass
+    def terminate(self) -> bool:
+        """Terminate the process. returns True if successful"""
+        return True
+
+    def start(self) -> bool:
+        """
+        Start the received process in a new thread
+        return true if successful
+        """
+        # self.pid
+        # print(f"Starting process: {self.procName} on {self.aliasIP}")
+        return False
 
 
 class ADC:
@@ -93,7 +119,7 @@ class ADC:
 
 def isLossOfPower(CThreshold=0.5, VThreshold=0.5) -> bool:
     """
-    Decide when node is losing power by reading 
+    Decide when node is losing power by reading
     voltage and current from GPIO pins
     `Note: This function is not yet calibrated`
     """
@@ -101,16 +127,11 @@ def isLossOfPower(CThreshold=0.5, VThreshold=0.5) -> bool:
     return (voltage < VThreshold or current < CThreshold)
 
 
-def startProcessThread(proc: Process) -> bool:
+def NetworkScan() -> List[IPv4Address]:
     """
-    Start the received process in a new thread
-    return true if successful
+    perform a ping scan for available nodes on the network
+    return: a list of IPv4Addresses of the available nodes
     """
-    return False
-
-
-def NetworkScan() -> list:
-    """Scan network ping scan for available nodes"""
     selfIP = socket.gethostbyname(socket.gethostname())
     gateway, cidrConf = subprocess.run(['ip', 'route'], capture_output=True, text=True).stdout.splitlines()  # get the network configuration of the node
     gateIP = gateway.split(' ')[2]  # get the gateway ip of the current network from the network configuration
@@ -119,12 +140,9 @@ def NetworkScan() -> list:
     nodeIPs = []
     lines = subprocess.run(['sudo', 'arp-scan', cidrIP, '-x', '-q', '-g'], capture_output=True, text=True).stdout.splitlines()
     for line in lines:  # for every found node in the network
-        nodeIPs.append(line.split('\t')[0])  # add the ip of that node to the list
+        nodeIPs.append(IPv4Address(line.split('\t')[0]))  # add the ip of that node to the list
 
-    if selfIP in nodeIPs:
-        nodeIPs.remove(selfIP)  # removing my own ip from the list
-    if gateIP in nodeIPs:
-        nodeIPs.remove(gateIP)  # removing gateway ip from the list
+    nodeIPs = [x for x in nodeIPs if x not in [selfIP, gateIP]]  # removing own ip and gateway ip from the list
     return nodeIPs
 
 
@@ -149,26 +167,21 @@ def sendFinishTransferFlag(username="pi", ip="1", password="pi", path=""):
         print("Failed to update file")
 
 
-def pollNodeforState(address: IPv4Address) -> str:
+def waitForProcReceive() -> Process | None:
     """
-    Poll node at given address to get state.
-    Used to confirm node status before migrating process to it.
+    Check specified directory for files of a process with finish flag.
+    if files are found with the flag, create a process object and return it.
     """
-    # *TCP address for Node State*
-    statefromNode = State.IDLE
-    return statefromNode
+    global DIRECTORY
+    received = next(iter(os.listdir(DIRECTORY)), None)  # check if there are any files in the directory
+    if received == None:
+        return None
+    if os.path.exists(os.path.join(DIRECTORY + received, "FLAG.TXT")) == False:
+        return None
+    return Process(received)
 
 
-def waitForProcess(directory=None) -> Process:
-    # Check specified directory for files of a process with finish flag
-    # if files are found with the flag, create a process object and return it
-    # else return None
-
-    # *Check directory for files of a process*
-    return None
-
-
-def checkpointandSaveProcessToDisk(processID: int, proc: Process):
+def checkpointandSaveProcessToDisk(proc: Process):
     """Handle case of no available nodes, checkpoint process to current working directory"""
     # *Run bash Script to checkpoint node and Save to receiving directory on current node*
     # *That way, on startup any files inside the directory will immediately be restored from
@@ -190,7 +203,7 @@ def checkpointAndMigrateProcessToNode(proc: Process, receivingIP: IPv4Address):
     if checkpointandSaveProcessToDisk(proc) == False:
         raise Exception("Failed to checkpoint process")
 
-    if pollNodeforState(receivingIP) != State.IDLE:
+    if pollNodeforState(receivingIP) != NodeState.IDLE:
         raise Exception("Receiving node is not ready to receive process")
 
     if handleIPaliasing(proc.getAliasedIP(), False) == False:
@@ -206,13 +219,30 @@ def checkpointAndMigrateProcessToNode(proc: Process, receivingIP: IPv4Address):
         raise Exception("Failed to delete process from disk")
 
 
-def handleIPaliasing(address: IPv4Address, add: bool) -> bool:
-    # *Run bash script to add IP alias to current node*
+def deleteProcessFromDisk(proc: Process):
+    directory = proc.getDirectory()
+    if os.system(f"rm -rf {directory}") != 0:
+        return False
     return True
-    if add:
-        return os.system(f"ip addr add {address}/24 dev eth0")
-    else:
-        return os.system(f"ip addr del {address}/24 dev eth0")
+
+
+def rsyncProcessToNode(proc: Process, receivingIP: IPv4Address, username="pi"):
+    """rsync process to receiving node"""
+    sendDir = proc.getDirectory()
+    os.system(f"rsync -avz {sendDir} {username}@{receivingIP}:{DIRECTORY}")
+    return True
+
+
+def addIPalias(address: IPv4Address) -> bool:
+    """add IP alias to current node"""
+    return True
+    return os.system(f"ip addr add {address}/24 dev eth0")
+
+
+def remIPalias(address: IPv4Address) -> bool:
+    # Run bash script to remove the IP alias from the node
+    return True
+    return os.system(f"ip addr del {address}/24 dev eth0")
 
 
 def migrateProcessToAvaliableNode(processID: int, proc: Process):
@@ -220,7 +250,7 @@ def migrateProcessToAvaliableNode(processID: int, proc: Process):
     ipToSend = None
     for address in nodeIPaddrs:
         selfState = pollNodeforState(address)
-        if selfState == State.IDLE:
+        if selfState == NodeState.IDLE:
             if ipToSend == None:
                 ipToSend = address
             else:
@@ -230,12 +260,6 @@ def migrateProcessToAvaliableNode(processID: int, proc: Process):
         checkpointandSaveProcessToDisk(processID, proc)
     else:
         checkpointAndMigrateProcessToNode(processID, proc, ipToSend)
-
-
-def getProcessID(proc) -> int:
-    # *Get process ID from process*
-    # pid = subprocess.check_output(['pidof', 'f{proc}'])
-    return 0  # pid
 
 
 def criuDump(proc, command=None) -> bool:
@@ -262,39 +286,40 @@ def handleStates():
     """Main FSM"""
     global selfState
     match selfState["state"]:
-        case State.IDLE:  # idle State, should look inside project directory for files to run
-            process = waitForProcess()
+        case NodeState.IDLE:  # idle State, should look inside project directory for files to run
+            process = waitForProcReceive()
             if process is not None:
                 if startProcessThread(process):
-                    selfState = State.BUSY
+                    selfState = NodeState.BUSY
                 else:
                     raise Exception("Failed to start process thread. Process not started.")
 
-        case State.BUSY:
+        case NodeState.BUSY:
             migrateReceived: bool = waitForMigrateCMD()
             if migrateReceived:
-                selfState = State.MIGRATING
+                selfState = NodeState.MIGRATING
                 processID = getProcessID()  # If complete, send output logs or finished process results back to user
             elif process.isComplete():
-                selfState = State.IDLE
+                selfState = NodeState.IDLE
                 sendProcessResultsToUser()
 
-        case State.MIGRATING:
+        case NodeState.MIGRATING:
             migrateProcessToAvaliableNode(processID, process)
             # if migration command is manual, then keep the node in idle, else send to shutdown state
             if isManualCMD:
-                selfState = State.IDLE
+                selfState = NodeState.IDLE
             else:
                 selfState = "shutdown"
         case "shutdown":
             # Node will shut down eventually with loss of power, but potentially leaving the option to return to
             # Idle state if power does return and node somehow still can operate
             if not isLossOfPower():
-                selfState = State.IDLE
+                selfState = NodeState.IDLE
     return selfState
 
 
 def main():
+    raise Exception("Main function not implemented. Do not run this yet.")
     # state["ip"] = socket.gethostbyname(socket.gethostname())
     try:
         broadcaster = BroadcastSender()  # Start broadcast sender and receiver threads
@@ -306,21 +331,22 @@ def main():
             # handleStates()  # Main FSM
             pass
     except KeyboardInterrupt:  # Handle keyboard interrupts
+        print("Exiting...")
         broadcaster.stop()
         broadcaster.join()
         receiver.stop()
         receiver.join()
-        print("Exiting...")
+
         sys.exit(0)
 
     except Exception as e:  # Handle any exceptions
+        print(e, "\nExiting...")
         broadcaster.stop()
-        broadcaster.join()
         receiver.stop()
+        broadcaster.join()
         receiver.join()
-        print(e)
-        print("Exiting...")
-        sys.exit(1)
+
+        sys.exit(1)  # Exit with error code 1
 
 
 class BroadcastSender(threading.Thread):
