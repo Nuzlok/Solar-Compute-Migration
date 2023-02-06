@@ -98,6 +98,19 @@ class Process:
         # print(f"Starting process: {self.procName} on {self.aliasIP}")
         return False
 
+    def dump(self, command=None, dumpToDisk=False) -> bool:
+        """ Dump the process using CRIU. Accepts a command to run after the dump is complete. returns True if successful"""
+
+        result = subprocess.check_output(['sudo', 'criu', 'dump', '-t', f'{self.pid}', '-v4', '-o', 'output.log', '&&', 'echo', 'OK'])
+        if result != "OK":
+            raise Exception(f"CRIU Dump Result: '{result}', Expected: OK")
+        if dumpToDisk:
+            os.system(f"mv -R ./{self.location} {DIRECTORY}{self.location}")
+            result = os.system(f"touch {DIRECTORY}{self.location}/FINISH.TXT")
+            if result != 0:
+                print("Finish Flag not copied. dump incomplete")
+                raise Exception("Finish Flag not copied. dump incomplete")
+
 
 class ADC:
     """
@@ -181,14 +194,6 @@ def waitForProcReceive() -> Process | None:
     return Process(received)
 
 
-def checkpointandSaveProcessToDisk(proc: Process):
-    """Handle case of no available nodes, checkpoint process to current working directory"""
-    # *Run bash Script to checkpoint node and Save to receiving directory on current node*
-    # *That way, on startup any files inside the directory will immediately be restored from
-    # Checkpoint and resumed on system*
-    pass
-
-
 def checkpointAndMigrateProcessToNode(proc: Process, receivingIP: IPv4Address):
     """
     Handle checkpointing and migration
@@ -226,6 +231,14 @@ def deleteProcessFromDisk(proc: Process):
     return True
 
 
+def criuRestore(path, command=None) -> bool:
+    """ Restore the process using CRIU. Accepts a command to run after the restore is complete. returns True if successful"""
+    result = subprocess.check_output(['sudo', 'criu', 'restore', '-d', '-v4', '-o', 'restore.log', '&&', 'echo', 'OK'])
+    if result == "OK":
+        return True
+    raise Exception(f"CRIU Restore Result: '{result}', Expected: OK")
+
+
 def rsyncProcessToNode(proc: Process, receivingIP: IPv4Address, username="pi"):
     """rsync process to receiving node"""
     sendDir = proc.getDirectory()
@@ -240,12 +253,12 @@ def addIPalias(address: IPv4Address) -> bool:
 
 
 def remIPalias(address: IPv4Address) -> bool:
-    # Run bash script to remove the IP alias from the node
+    """remove IP alias to current node"""
     return True
     return os.system(f"ip addr del {address}/24 dev eth0")
 
 
-def migrateProcessToAvaliableNode(processID: int, proc: Process):
+def migrateProcessToAvaliableNode(proc: Process):
     global selfState
     ipToSend = None
     for address in nodeIPaddrs:
@@ -260,26 +273,6 @@ def migrateProcessToAvaliableNode(processID: int, proc: Process):
         checkpointandSaveProcessToDisk(processID, proc)
     else:
         checkpointAndMigrateProcessToNode(processID, proc, ipToSend)
-
-
-def criuDump(proc, command=None) -> bool:
-    result = subprocess.check_output(['sudo', 'criu', 'dump', '-t', f'$(pgrep {proc})', '-v4', '-o', 'output.log', '&&', 'echo', 'OK'])
-    if result == "OK":
-        return True
-    raise Exception(f"CRIU Dump Result: '{result}', Expected: OK")
-
-
-def criuRestore(path, command=None) -> bool:
-    result = subprocess.check_output(['sudo', 'criu', 'restore', '-d', '-v4', '-o', 'restore.log', '&&', 'echo', 'OK'])
-    if result == "OK":
-        return True
-    raise Exception(f"CRIU Restore Result: '{result}', Expected: OK")
-
-
-def sendProcessResultsToUser():
-    # os.system("scp .....")
-    # os.system("ssh to other node, create flag file. idk how to do this better")
-    pass
 
 
 def handleStates():
