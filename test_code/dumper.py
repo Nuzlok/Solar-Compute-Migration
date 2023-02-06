@@ -18,7 +18,7 @@ dst_ip = sys.argv[1]  # IP of the new server
 
 
 # This is the expect script that will be run to transfer the dump file to the server
-# we use expect to automate the password prompt for scp so we don't have to type it in manually
+# we use expect to automate the password prompt for scp/rsync so we don't have to type it in manually
 expect_script = f"""
 #!/usr/bin/expect
 set timeout 30
