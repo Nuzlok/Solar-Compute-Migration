@@ -12,8 +12,6 @@ from typing import List
 
 from gpiozero import MCP3008
 
-# https://gpiozero.readthedocs.io/en/stable/api_input.html#mcp3008
-
 
 class NodeState(Enum):
     IDLE = auto()			# Node is idle and ready to accept
@@ -30,8 +28,8 @@ class ProcState(Enum):
     WAITING = auto()  # Process is waiting to be started
     TERMINATED = auto()  # Process is terminated forcefully
     COMPLETED = auto()  # Process is completed successfully
-    ERROR = auto()  # Process is terminated due to an error
-    NONE = auto()  # THere is no process
+    ERROR = auto()		# Process is terminated due to an error
+    NONE = auto()		# There is no process
 
     def __str__(self):
         return self.name
@@ -111,12 +109,18 @@ class Process:
                 print("Finish Flag not copied. dump incomplete")
                 raise Exception("Finish Flag not copied. dump incomplete")
 
+    def deleteFromDisk(self):
+        if os.system(f"rm -rf {self.getDirectory()}") != 0:
+            return False
+        return True
+
 
 class ADC:
     """
     `Note: This Class is not yet calibrated and should only be run on a raspberry pi`\n
     Read voltage and current from GPIO pins.
     This class provides function to calculate the power.
+    https://gpiozero.readthedocs.io/en/stable/api_input.html#mcp3008
     """
 
     def __init__(self):
@@ -124,10 +128,13 @@ class ADC:
         self.voltage = MCP3008(channel=2, differential=False, max_voltage=3.3)
         self.current = MCP3008(channel=1, differential=True, max_voltage=3.3)  # differential on channel 1 and 0, might need to change to pin 0 if output is inverted
 
+        self.vscale = 1
+        self.cscale = 1
+
     def readPower(self) -> tuple:
         if not os.uname().machine.startswith("arm"):
             raise Exception("ADC can only be run on a raspberry pi")
-        return self.voltage.value, self.current.value
+        return self.voltage.value * self.vscale, self.current.value * self.cscale
 
 
 def isLossOfPower(CThreshold=0.5, VThreshold=0.5) -> bool:
@@ -144,7 +151,10 @@ def NetworkScan() -> List[IPv4Address]:
     """
     perform a ping scan for available nodes on the network
     return: a list of IPv4Addresses of the available nodes
+    DOES NOT WORK YET
     """
+    print("NetworkScan() does not work. do not use this yet")
+    return
     selfIP = socket.gethostbyname(socket.gethostname())
     gateway, cidrConf = subprocess.run(['ip', 'route'], capture_output=True, text=True).stdout.splitlines()  # get the network configuration of the node
     gateIP = gateway.split(' ')[2]  # get the gateway ip of the current network from the network configuration
@@ -164,6 +174,8 @@ def waitForMigrateCMD() -> bool:
     Handle migrate command. Returns true if the process should be migrated.
     Migration is triggered by a loss of power or a manual migate command through the HMI.
     """
+    print("waitForMigrateCMD() does not work. do not use this yet")
+    return
     if isLossOfPower():  # Check for loss of power or manual input command
         return True
     if selfState["manual"] and selfState["migrate_cmd"] == True:
@@ -185,7 +197,7 @@ def waitForProcReceive() -> Process | None:
     Check specified directory for files of a process with finish flag.
     if files are found with the flag, create a process object and return it.
     """
-    global DIRECTORY
+    # global DIRECTORY # Not sure if I need this or not.
     received = next(iter(os.listdir(DIRECTORY)), None)  # check if there are any files in the directory
     if received == None:
         return None
@@ -205,13 +217,13 @@ def checkpointAndMigrateProcessToNode(proc: Process, receivingIP: IPv4Address):
     6. Delete process and supporting files on current node
     """
 
-    if checkpointandSaveProcessToDisk(proc) == False:
+    if proc.dump() == False:
         raise Exception("Failed to checkpoint process")
 
     if pollNodeforState(receivingIP) != NodeState.IDLE:
         raise Exception("Receiving node is not ready to receive process")
 
-    if handleIPaliasing(proc.getAliasedIP(), False) == False:
+    if remIPalias(proc.getAliasedIP()) == False:
         raise Exception("Failed to remove IP alias from current node")
 
     if rsyncProcessToNode(proc, receivingIP) == False:
@@ -224,35 +236,42 @@ def checkpointAndMigrateProcessToNode(proc: Process, receivingIP: IPv4Address):
         raise Exception("Failed to delete process from disk")
 
 
-def deleteProcessFromDisk(proc: Process):
-    directory = proc.getDirectory()
-    if os.system(f"rm -rf {directory}") != 0:
-        return False
-    return True
-
-
 def criuRestore(path, command=None) -> bool:
     """ Restore the process using CRIU. Accepts a command to run after the restore is complete. returns True if successful"""
     result = subprocess.check_output(['sudo', 'criu', 'restore', '-d', '-v4', '-o', 'restore.log', '&&', 'echo', 'OK'])
-    if result == "OK":
-        return True
-    raise Exception(f"CRIU Restore Result: '{result}', Expected: OK")
-
-
-def rsyncProcessToNode(proc: Process, receivingIP: IPv4Address, username="pi"):
-    """rsync process to receiving node"""
-    sendDir = proc.getDirectory()
-    os.system(f"rsync -avz {sendDir} {username}@{receivingIP}:{DIRECTORY}")
+    if result != "OK":
+        raise Exception(f"CRIU Restore Failed")
     return True
 
 
-def addIPalias(address: IPv4Address) -> bool:
+def rsyncProcessToNode(proc: Process, receivingIP: IPv4Address | str, password="pi"):
+    """rsync process to receiving node"""
+
+    sendDir = proc.getDirectory()
+
+    # This is the expect script that will be run to transfer the dump file to the server
+    # we use expect to automate the password prompt for scp/rsync so we don't have to type it in manually
+    expect_script = f"""
+	set timeout 30
+	spawn rsync -avz /home/pi/{sendDir} pi@{receivingIP}:{DIRECTORY}
+	expect "password:"
+	send "{password}\r"
+	expect eof
+	"""
+    result = subprocess.run(['expect'], input=expect_script, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8')
+
+    if result.returncode != 0:  # If the script failed
+        print("File transfer failed")
+    os.system(f"sudo ip addr del {proc.getAliasedIP()}/24 dev eth0")
+
+
+def addIPalias(address: IPv4Address | str) -> bool:
     """add IP alias to current node"""
     return True
     return os.system(f"ip addr add {address}/24 dev eth0")
 
 
-def remIPalias(address: IPv4Address) -> bool:
+def remIPalias(address: IPv4Address | str) -> bool:
     """remove IP alias to current node"""
     return True
     return os.system(f"ip addr del {address}/24 dev eth0")
@@ -270,9 +289,9 @@ def migrateProcessToAvaliableNode(proc: Process):
                 # * Possible comparison for other factors like time, weather, etc.*
                 ipToSend = address
     if ipToSend == None:
-        checkpointandSaveProcessToDisk(processID, proc)
+        checkpointandSaveProcessToDisk(proc)
     else:
-        checkpointAndMigrateProcessToNode(processID, proc, ipToSend)
+        checkpointAndMigrateProcessToNode(proc, ipToSend)
 
 
 def handleStates():
