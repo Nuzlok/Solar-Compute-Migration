@@ -8,7 +8,6 @@ import threading
 import time
 from enum import Enum, auto
 from ipaddress import IPv4Address
-from typing import List
 
 from gpiozero import MCP3008
 
@@ -38,7 +37,6 @@ class ProcState(Enum):
 selfState = {"ip": "", "status": "online", "state": NodeState.IDLE, "current": 0, "voltage": 0, "manual": False, "migrate_cmd": False, "reboot_cmd": False, "shutdown_cmd": False, }
 uniqueOtherNodeStatuses = {}
 processID = ""
-isManualCMD = ""
 EXIT = False
 DIRECTORY = "/home/pi/ReceivedProcesses/"
 
@@ -50,14 +48,14 @@ class Process:
     """
 
     def __init__(self, name: str):
-        print("TODO: process init not complete yet")
-
-        self.procName = name
-        self.location = DIRECTORY + name
+        print("TODO: Process __init__ not implemented yet.")
         self.procState = ProcState.NONE
-        self.pid = None
-        self.aliasIP = None
-        # self.aliasIP = getAvailableIP()  # TODO: get an available IP address for the process (check list of used IPs and invert that list)
+
+    def create(self, name: str, location: str, aliasIP: IPv4Address, pid: int):
+        self.procName = name
+        self.location = location
+        self.aliasIP = aliasIP  # getAvailableIP()  # TODO: get an available IP address for the process (check list of used IPs and invert that list)
+        self.pid = pid
 
     def __str__(self) -> str:
         return f"Process: <Name:{self.procName}, PID:{self.getPID()}, IP:{self.aliasIP}, State:{self.getProcessState()}>"
@@ -65,10 +63,6 @@ class Process:
     def getProcessName(self) -> str:
         """Get the name of the process. This is the name of the executable, not the PID or anything else"""
         return self.procName
-
-    def getProcessState(self) -> ProcState:
-        """Get the state of the process (running, stopped, etc)"""
-        return ProcState.NONE
 
     def getAliasedIP(self) -> IPv4Address:
         """Get the aliased IP address of the process"""
@@ -82,7 +76,7 @@ class Process:
         """Terminate the process. returns True if successful"""
         return True
 
-    def start(self) -> bool:
+    def run(self) -> bool:
         """
         Start the received process in a new thread
         return true if successful
@@ -110,7 +104,7 @@ class Process:
         return True
 
 
-def readPower(self) -> tuple:
+def readPower() -> tuple[float, float]:
     """
     `Note: This function is not yet calibrated and should only be run on a raspberry pi`\n
     Read voltage and current from GPIO pins.
@@ -187,7 +181,7 @@ def checkpointAndMigrateProcessToNode(proc: Process, receivingIP: IPv4Address):
     if proc.dump() == False:
         raise Exception("Failed to checkpoint process")
 
-    if pollNodeforState(receivingIP) != NodeState.IDLE:
+    if confirmNodeAvailable(receivingIP) != NodeState.IDLE:
         raise Exception("Receiving node is not ready to receive process")
 
     if remIPalias(proc.getAliasedIP()) == False:
@@ -207,7 +201,8 @@ def criuRestore(path, command=None) -> bool:
     """ Restore the process using CRIU. Accepts a command to run after the restore is complete. returns True if successful"""
     result = subprocess.check_output(['sudo', 'criu', 'restore', '-d', '-v4', '-o', 'restore.log', '&&', 'echo', 'OK'])
     if result != "OK":
-        raise Exception(f"CRIU Restore Failed")
+        print("CRIU Restore Failed")
+        return False
     return True
 
 
@@ -240,67 +235,66 @@ def remIPalias(address: IPv4Address | str) -> bool:
     return os.system(f"ip addr del {address}/24 dev eth0")
 
 
-# def migrateProcessToAvaliableNode(proc: Process) -> bool:
-#     global selfState
-#     for address in nodeIPaddrs:
-#         selfState = pollNodeforState(address)
-#         if selfState == NodeState.IDLE:
-#             if ipToSend == None:
-#                 ipToSend = address
-#             else:
-#                 # * Possible comparison for other factors like time, weather, etc.*
-#                 ipToSend = address
-#     if ipToSend == None:
-#         checkpointandSaveProcessToDisk(proc)
-#     else:
-#         checkpointAndMigrateProcessToNode(proc, ipToSend)
-
 def findAvailableNode() -> IPv4Address | None:
     """Find an available node to migrate to"""
-    for node in NODES:
-        if pollNodeforState(node) == NodeState.IDLE:
-            return node
-    return None
+    available = []
+    for ip, (packet, _) in uniqueOtherNodeStatuses:  # TODO: Check if this is the correct syntax
+        if packet["state"] == NodeState.IDLE:  # found an available node
+            available.append(ip)
+
+    # TODO: Possible comparison for other factors like time, weather, etc.. here. For now, just return the first available node
+
+    return available[0] if len(available) > 0 else None
 
 
-def handleStates():
-    """Main FSM"""
+def confirmNodeAvailable(ip: IPv4Address | str) -> bool:
+    """Confirm that the node is available to receive a process by waiting for a new packet from the node"""
+    last_time = uniqueOtherNodeStatuses[ip][1]
+    while time.time() < last_time + 10:  # wait maximum 10 seconds for a new packet from the node
+        if uniqueOtherNodeStatuses[ip][1] > last_time:
+            return True
+    return False  # timed out
+
+
+def MainFSM():
     global selfState
-    match selfState["state"]:
+    process = None
+    match selfState["state"]:  # (Like a switch statement in C)
         case NodeState.IDLE:  # idle State, should look inside project directory for files to run
             process = waitForProcReceive()
             if process is not None:
-                if startProcessThread(process):
+                if process.run():
                     selfState = NodeState.BUSY
                 else:
-                    raise Exception("Failed to start process thread. Process not started.")
+                    print("Failed to start process thread. Process not started.")
+                    sys.exit(1)
 
         case NodeState.BUSY:
-            migrateReceived: bool = awaitMigrateSignal()
+            migrateReceived = awaitMigrateSignal()
             if migrateReceived:
                 selfState = NodeState.MIGRATING
-                processID = getProcessID()  # If complete, send output logs or finished process results back to user
             elif process.isComplete():
                 selfState = NodeState.IDLE
-                sendProcessResultsToUser()
+                # sendProcessResultsToUser() # TODO: if we want to send the results to the user, we can do that here
 
         case NodeState.MIGRATING:
-            migrateProcessToAvaliableNode(processID, process)
-            # if migration command is manual, then keep the node in idle, else send to shutdown state
-            if isManualCMD:
-                selfState = NodeState.IDLE
-            else:
-                selfState = "shutdown"
-        case "shutdown":
-            # Node will shut down eventually with loss of power, but potentially leaving the option to return to
-            # Idle state if power does return and node somehow still can operate
-            if not isLossOfPower():
-                selfState = NodeState.IDLE
+            migrateProcessToAvaliableNode(process)
+            selfState = NodeState.IDLE
+            # # if migration command is manual, then keep the node in idle, else send to shutdown state
+            # selfState = NodeState.IDLE if isManualCMD else NodeState.SHUTDOWN
+
+        # case NodeState.SHUTDOWN:
+        #     # Do we need a shutdown state? I don't think so, but I'm leaving it here for now
+        #     # Node will shut down eventually with loss of power, but potentially leaving the option to return to
+        #     # Idle state if power does return and node somehow still can operate
+        #     if not isLossOfPower():
+        #         selfState = NodeState.IDLE
     return selfState
 
 
 def main():
-    raise Exception("Main function not implemented. Do not run this yet.")
+    print("Main function not implemented. Do not run this yet.")
+    exit()
     # state["ip"] = socket.gethostbyname(socket.gethostname())
     try:
         broadcaster = BroadcastSender()  # Start broadcast sender and receiver threads
@@ -363,11 +357,11 @@ class BroadcastReceiver(threading.Thread):
         self._running = True
         self.listenPort = 12345
         self.sockSize = 512
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # Create a UDP socket
-        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # Allow the socket to be reused
-        self.sock.settimeout(1)  # Set a timeout so the socket doesn't block indefinitely when trying to receive data
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.sock.settimeout(1)                # Set a timeout so the socket doesn't block indefinitely when trying to receive data
         self.sock.bind(('', self.listenPort))  # Listen on all interfaces on port 12345 for broadcast packets
-        self.timeout_reset_counter = 8  # every 8 timeouts, clear the uniqueOtherNodeStatuses dictionary to remove old nodes
+        self.timeout_reset_counter = 8         # every 8 timeouts, clear the dictionary to remove old nodes
         super().__init__()
 
     def run(self):
@@ -376,14 +370,13 @@ class BroadcastReceiver(threading.Thread):
         while self._running:
             try:
                 packet = pickle.loads(self.sock.recvfrom(self.sockSize)[0])
-                # TODO: Ignore packets that come from self ip address. This does not work yet because the broadcast ip is randomly generated for testing ---------------
-                uniqueOtherNodeStatuses[packet["ip"]] = packet, time.time()
-                # print(list(uniqueOtherNodeStatuses.values())) # Print the packet for debugging purposes
+                if packet["ip"] != selfState["ip"]:                              # If the packet is not from this node
+                    uniqueOtherNodeStatuses[packet["ip"]] = packet, time.time()
             except socket.timeout:
                 if self.timeout_reset_counter-1 == 0:
-                    uniqueOtherNodeStatuses = {}  # If we don't receive any data within the timeout period, clear the uniqueOtherNodeStatuses dictionary
+                    uniqueOtherNodeStatuses = {}      # If we don't receive anything within a period, clear
                     self.timeout_reset_counter = 8
-            except Exception as e:  # If we receive any other exception, just print it and keep listening
+            except Exception as e:                    # If we receive any exception, just print it and continue
                 print(e)
 
     def stop(self):
