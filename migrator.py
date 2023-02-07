@@ -199,7 +199,7 @@ def checkpointAndMigrateProcessToNode(proc: Process, receivingIP: IPv4Address):
     if sendFinishTransferFlag(receivingIP) == False:
         raise Exception("Failed to send finish flag to receiving node")
 
-    if deleteProcessFromDisk(proc) == False:
+    if proc.deleteFromDisk() == False:
         raise Exception("Failed to delete process from disk")
 
 
@@ -240,20 +240,27 @@ def remIPalias(address: IPv4Address | str) -> bool:
     return os.system(f"ip addr del {address}/24 dev eth0")
 
 
-def migrateProcessToAvaliableNode(proc: Process) -> bool:
-    global selfState
-    for address in nodeIPaddrs:
-        selfState = pollNodeforState(address)
-        if selfState == NodeState.IDLE:
-            if ipToSend == None:
-                ipToSend = address
-            else:
-                # * Possible comparison for other factors like time, weather, etc.*
-                ipToSend = address
-    if ipToSend == None:
-        checkpointandSaveProcessToDisk(proc)
-    else:
-        checkpointAndMigrateProcessToNode(proc, ipToSend)
+# def migrateProcessToAvaliableNode(proc: Process) -> bool:
+#     global selfState
+#     for address in nodeIPaddrs:
+#         selfState = pollNodeforState(address)
+#         if selfState == NodeState.IDLE:
+#             if ipToSend == None:
+#                 ipToSend = address
+#             else:
+#                 # * Possible comparison for other factors like time, weather, etc.*
+#                 ipToSend = address
+#     if ipToSend == None:
+#         checkpointandSaveProcessToDisk(proc)
+#     else:
+#         checkpointAndMigrateProcessToNode(proc, ipToSend)
+
+def findAvailableNode() -> IPv4Address | None:
+    """Find an available node to migrate to"""
+    for node in NODES:
+        if pollNodeforState(node) == NodeState.IDLE:
+            return node
+    return None
 
 
 def handleStates():

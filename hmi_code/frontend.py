@@ -14,21 +14,14 @@ DEBUG = True
 PACKET = {}
 
 
-class State(Enum):
+class NodeState(Enum):
     IDLE = auto()			# Node is idle and ready to accept
     BUSY = auto()			# Node is busy with processes and cannot accept processes
     MIGRATING = auto()  	# Node is migrating to another and cannot accept processes
     SHUTDOWN = auto()		# Node is shutting down and cannot accept processes
 
     def __str__(self):
-        if self == self.IDLE:
-            return "idle"
-        if self == self.BUSY:
-            return "busy"
-        if self == self.MIGRATING:
-            return "migrating"
-        if self == self.SHUTDOWN:
-            return "shutdown"
+        return self.name
 
 
 class MainWindow(QMainWindow):
