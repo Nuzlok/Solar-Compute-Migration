@@ -37,7 +37,6 @@ class ProcState(Enum):
 
 selfState = {"ip": "", "status": "online", "state": NodeState.IDLE, "current": 0, "voltage": 0, "manual": False, "migrate_cmd": False, "reboot_cmd": False, "shutdown_cmd": False, }
 uniqueOtherNodeStatuses = {}
-nodeIPaddrs = []
 processID = ""
 isManualCMD = ""
 EXIT = False
@@ -57,15 +56,11 @@ class Process:
         self.location = DIRECTORY + name
         self.procState = ProcState.NONE
         self.pid = None
+        self.aliasIP = None
         # self.aliasIP = getAvailableIP()  # TODO: get an available IP address for the process (check list of used IPs and invert that list)
 
     def __str__(self) -> str:
         return f"Process: <Name:{self.procName}, PID:{self.getPID()}, IP:{self.aliasIP}, State:{self.getProcessState()}>"
-
-    def getPID(self) -> int | None:
-        """Get the PID of the process. returns None if process is not running"""
-        # return self.pid
-        return None
 
     def getProcessName(self) -> str:
         """Get the name of the process. This is the name of the executable, not the PID or anything else"""
@@ -76,8 +71,8 @@ class Process:
         return ProcState.NONE
 
     def getAliasedIP(self) -> IPv4Address:
-        """Get the IP address of the process"""
-        return IPv4Address("0.0.0.0")
+        """Get the aliased IP address of the process"""
+        return self.aliasIP
 
     def getDirectory(self) -> str | None:
         """Get the directory of the process. returns None if process does not have a directory"""
@@ -115,81 +110,53 @@ class Process:
         return True
 
 
-class ADC:
+def readPower(self) -> tuple:
     """
-    `Note: This Class is not yet calibrated and should only be run on a raspberry pi`\n
+    `Note: This function is not yet calibrated and should only be run on a raspberry pi`\n
     Read voltage and current from GPIO pins.
-    This class provides function to calculate the power.
     https://gpiozero.readthedocs.io/en/stable/api_input.html#mcp3008
     """
+    if not os.uname().machine.startswith("arm"):
+        raise Exception("ADC can only be run on a raspberry pi")
 
-    def __init__(self):
-        # TODO: calibrate voltage and current values, and scaling factor
-        self.voltage = MCP3008(channel=2, differential=False, max_voltage=3.3)
-        self.current = MCP3008(channel=1, differential=True, max_voltage=3.3)  # differential on channel 1 and 0, might need to change to pin 0 if output is inverted
+    voltage = MCP3008(channel=2, differential=False, max_voltage=3.3)  # single ended on channel 2
+    current = MCP3008(channel=1, differential=True, max_voltage=3.3)  # differential on channel 1 and 0, might need to change to pin 0 if output is inverted
 
-        self.vscale = 1
-        self.cscale = 1
+    time.sleep(0.1)  # wait for the ADC to settle
 
-    def readPower(self) -> tuple:
-        if not os.uname().machine.startswith("arm"):
-            raise Exception("ADC can only be run on a raspberry pi")
-        return self.voltage.value * self.vscale, self.current.value * self.cscale
+    return voltage.value * 1, current.value * 1
 
 
-def isLossOfPower(CThreshold=0.5, VThreshold=0.5) -> bool:
+def isLossOfPower(vThresh=0.5, cThresh=0.5) -> bool:
+    """ Decide when node is losing power by comparing the voltage and current to a threshold. """
+    voltage, current = readPower()
+    return (voltage < vThresh or current < cThresh)
+
+
+def awaitMigrateSignal(forceMigrate=False) -> bool:
     """
-    Decide when node is losing power by reading
-    voltage and current from GPIO pins
-    `Note: This function is not yet calibrated`
-    """
-    voltage, current = ADC.readPower()
-    return (voltage < VThreshold or current < CThreshold)
-
-
-def NetworkScan() -> List[IPv4Address]:
-    """
-    perform a ping scan for available nodes on the network
-    return: a list of IPv4Addresses of the available nodes
-    DOES NOT WORK YET
-    """
-    print("NetworkScan() does not work. do not use this yet")
-    return
-    selfIP = socket.gethostbyname(socket.gethostname())
-    gateway, cidrConf = subprocess.run(['ip', 'route'], capture_output=True, text=True).stdout.splitlines()  # get the network configuration of the node
-    gateIP = gateway.split(' ')[2]  # get the gateway ip of the current network from the network configuration
-    cidrIP = cidrConf.split(' ')[0]  # get the full cidr of the current network from the network configuration
-
-    nodeIPs = []
-    lines = subprocess.run(['sudo', 'arp-scan', cidrIP, '-x', '-q', '-g'], capture_output=True, text=True).stdout.splitlines()
-    for line in lines:  # for every found node in the network
-        nodeIPs.append(IPv4Address(line.split('\t')[0]))  # add the ip of that node to the list
-
-    nodeIPs = [x for x in nodeIPs if x not in [selfIP, gateIP]]  # removing own ip and gateway ip from the list
-    return nodeIPs
-
-
-def waitForMigrateCMD() -> bool:
-    """
-    Handle migrate command. Returns true if the process should be migrated.
+    Handle migrate command. Returns true when the process should be migrated.
     Migration is triggered by a loss of power or a manual migate command through the HMI.
+    forceMigrate parameter is there for testing purposes, and in case there is a future need to force a migration.
     """
-    print("waitForMigrateCMD() does not work. do not use this yet")
-    return
-    if isLossOfPower():  # Check for loss of power or manual input command
+    global selfState
+    if isLossOfPower() or forceMigrate:
         return True
-    if selfState["manual"] and selfState["migrate_cmd"] == True:
+    if selfState["migrate_cmd"] == True:
         selfState["migrate_cmd"] = False
         return True
     return False
 
 
-def sendFinishTransferFlag(username="pi", ip="1", password="pi", path=""):
-    result = subprocess.run(["ssh", "-t", f"{username}@{ip}", "-p", f"{password}", f"touch {path}; exit"], stdout=subprocess.PIPE)
-    if result.returncode == 0:
-        print("File updated successfully")
-    else:
-        print("Failed to update file")
+def sendFinishTransferFlag(path: str, ip: IPv4Address, username="pi", password="pi") -> None:
+    """ 
+    Send a flag to the destination node to indicate that the file transfer is complete.
+    without this flag, the destination node will not know if an error occurred during the transfer.
+    """
+    result = subprocess.run(["ssh", "-t", f"{username}@{ip}", "-p", f"{password}", f"touch {path}/FLAG.TXT; exit"], stdout=subprocess.PIPE)
+    if result.returncode != 0:
+        return print("Failed to update file")
+    print("File updated successfully")
 
 
 def waitForProcReceive() -> Process | None:
@@ -245,15 +212,12 @@ def criuRestore(path, command=None) -> bool:
 
 
 def rsyncProcessToNode(proc: Process, receivingIP: IPv4Address | str, password="pi"):
-    """rsync process to receiving node"""
+    """rsync dumped files to receiving node"""
 
-    sendDir = proc.getDirectory()
-
-    # This is the expect script that will be run to transfer the dump file to the server
     # we use expect to automate the password prompt for scp/rsync so we don't have to type it in manually
     expect_script = f"""
 	set timeout 30
-	spawn rsync -avz /home/pi/{sendDir} pi@{receivingIP}:{DIRECTORY}
+	spawn rsync -avz /home/pi/{proc.getDirectory()} pi@{receivingIP}:{DIRECTORY}
 	expect "password:"
 	send "{password}\r"
 	expect eof
@@ -262,7 +226,6 @@ def rsyncProcessToNode(proc: Process, receivingIP: IPv4Address | str, password="
 
     if result.returncode != 0:  # If the script failed
         print("File transfer failed")
-    os.system(f"sudo ip addr del {proc.getAliasedIP()}/24 dev eth0")
 
 
 def addIPalias(address: IPv4Address | str) -> bool:
@@ -277,9 +240,8 @@ def remIPalias(address: IPv4Address | str) -> bool:
     return os.system(f"ip addr del {address}/24 dev eth0")
 
 
-def migrateProcessToAvaliableNode(proc: Process):
+def migrateProcessToAvaliableNode(proc: Process) -> bool:
     global selfState
-    ipToSend = None
     for address in nodeIPaddrs:
         selfState = pollNodeforState(address)
         if selfState == NodeState.IDLE:
@@ -307,7 +269,7 @@ def handleStates():
                     raise Exception("Failed to start process thread. Process not started.")
 
         case NodeState.BUSY:
-            migrateReceived: bool = waitForMigrateCMD()
+            migrateReceived: bool = awaitMigrateSignal()
             if migrateReceived:
                 selfState = NodeState.MIGRATING
                 processID = getProcessID()  # If complete, send output logs or finished process results back to user
@@ -408,7 +370,7 @@ class BroadcastReceiver(threading.Thread):
             try:
                 packet = pickle.loads(self.sock.recvfrom(self.sockSize)[0])
                 # TODO: Ignore packets that come from self ip address. This does not work yet because the broadcast ip is randomly generated for testing ---------------
-                uniqueOtherNodeStatuses[packet["ip"]] = packet
+                uniqueOtherNodeStatuses[packet["ip"]] = packet, time.time()
                 # print(list(uniqueOtherNodeStatuses.values())) # Print the packet for debugging purposes
             except socket.timeout:
                 if self.timeout_reset_counter-1 == 0:
