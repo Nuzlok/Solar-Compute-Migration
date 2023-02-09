@@ -18,7 +18,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         items = []
         dir_path = "**/" if recursive else ""
         for ext in ['mp4', 'jpg', 'png', 'gif', 'jpeg']:
-            items.extend([str(f) for f in path.glob('%s*.%s' % (dir_path, ext))])
+            items.extend([str(f) for f in path.glob(f'{dir_path}*.{ext}')])
         items.sort()
         return items
 
@@ -36,18 +36,15 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         return_info = []
         for item_path in items:
             item_name = item_path.rsplit('/', 1)[-1]
-            mod_time = time.strftime('%Y-%m-%d %H:%M:%S',
-                                     time.localtime(os.path.getmtime(item_path)))
+            mod_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(os.path.getmtime(item_path)))
             return_info.append({'name': item_name,
                                 'path': item_path,
                                 'time': mod_time})
-        return_string = json.dumps(return_info).encode('utf-8')
-        self.wfile.write(return_string)
+        self.wfile.write(json.dumps(return_info).encode('utf-8'))
 
     def do_HEAD(self):
         """Serve a HEAD request."""
-        f = self.send_head()
-        if f:
+        if f := self.send_head():
             f.close()
 
     def do_GET(self):
@@ -68,18 +65,18 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
             # Build a html file
             head_html = header.replace('max-height: 320px;',
-                                       'max-height: {}px;'.format(self._max_height))
+                                       f'max-height: {self._max_height}px;')
             head_html = head_html.replace('max-width: 320px;',
-                                          'max-width: {}px;'.format(self._max_width))
+                                          f'max-width: {self._max_width}px;')
             script_html = script.replace('max_length = 30',
-                                         'max_length = {}'.format(self._max_file_name_length))
+                                         f'max_length = {self._max_file_name_length}')
             if not self._display:
                 script_html = script_html.replace('+ itemHTML', '+ ""')
 
             html = ['<!DOCTYPE html>', '<html>', head_html, '<body>']
             for dir_name in sorted(item_names.keys()):
                 html += ['<button class="accordion">', dir_name,
-                         '[%d items]' % len(item_names[dir_name]), '</button>',
+                         f'[{len(item_names[dir_name])} items]', '</button>',
                          '<div class="panel">', '</div>']
             html += [script_html, '</body>', '</html>']
 
@@ -169,7 +166,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-type", ctype)
         if is_range:
             self.send_header('Accept-Ranges', 'bytes')
-            self.send_header('Content-Range', 'bytes {}-{}/{}'.format(s, e, file_size))
+            self.send_header('Content-Range', f'bytes {s}-{e}/{file_size}')
         self.send_header("Content-Length", str(content_size))
         self.send_header("Last-Modified", self.date_time_string(fs.st_mtime))
         self.end_headers()
@@ -209,6 +206,8 @@ def main():
     parser.add_argument('--display', type=str2bool, default=True,
                         choices=[True, False],
                         help='display videos and images.')
+    parser.add_argument('--bind_ip', type=str, default='',
+                        help='The address to bind the server to.')
 
     args = parser.parse_args()
 
@@ -223,16 +222,14 @@ def main():
         _recursive = args.recursive
         _display = args.display
 
-    server = http.server.HTTPServer(('', args.port), RequestHandlerWithArgs)
+    server = http.server.HTTPServer((args.bind_ip, args.port), RequestHandlerWithArgs)
 
     try:
-        print('Run videoboard server on port %d' % args.port)
+        print(f'Run videoboard server on <IP:{args.bind_ip}, port:{args.port}>')
         server.serve_forever()
     except KeyboardInterrupt:
-        pass
-
-    print('Close server')
-    server.server_close()
+        print('Close server')
+        server.server_close()
 
 
 if __name__ == '__main__':
