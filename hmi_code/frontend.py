@@ -1,6 +1,7 @@
 import pickle
 import socket
 import sys
+import time
 from enum import Enum, auto
 from ipaddress import IPv4Address
 
@@ -9,9 +10,9 @@ from PySide6.QtCore import *
 from PySide6.QtGui import *
 from PySide6.QtWidgets import *
 
-CURRENT_NODE = 'x'
+CURRENTLY_SELECTED = 'x'
 DEBUG = True
-PACKET = {}
+nodeStatuses = {}
 
 
 class NodeState(Enum):
@@ -27,8 +28,7 @@ class NodeState(Enum):
 class MainWindow(QMainWindow):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # self.setMinimumSize(600, 300)
-        self.setFixedSize(600, 300)     # Resizing the window horizontally breaks the alignment of the "resize button"
+        self.setFixedSize(600, 300)
         self.setWindowTitle("Migration Assistant")
 
         self.title_label = QLabel("Migration Assistant", parent=self)
@@ -38,18 +38,22 @@ class MainWindow(QMainWindow):
         self.manualMode = ManualModeWidget(parent=self)
         self.manualButtons = ManualButtonsWidget(parent=self)
         self.nodeSelector = NodeSelectionWidget(parent=self)
-        self.stateText = CurrentStateWidget(parent=self)
 
-        self.layout = QGridLayout()
-        # self.layout = QGridLayout(parent=self)        # It appears (parent=self) generates a warning
+        self.stateText = QLineEdit(self)
+        self.stateText.setText('Current State')
+        self.stateText.setAlignment(Qt.AlignCenter)
+        self.stateText.setReadOnly(True)
+        self.stateText.setMinimumHeight(100)
+        self.stateText.setStyleSheet("color: grey; font: 24pt; text-align: center; border-radius: 10px; border: 1px solid grey; margin: 10px 20px 10px 20px;")
+
+        self.layout = QGridLayout()  # (parent=self) generates a warning
         self.layout.addWidget(self.title_label, 0, 0, 1, 4)
         self.layout.addWidget(self.nodeSelector, 1, 0, 1, 3)
         self.layout.addWidget(self.powerWidget, 2, 0)
         self.layout.addWidget(self.manualMode, 2, 1)
         self.layout.addWidget(self.stateText, 3, 0)
         self.layout.addWidget(self.manualButtons, 3, 1)
-        self.layoutWidget = QWidget()
-        # self.layoutWidget = QWidget(parent=self)      # It appears (parent=self) generates a warning
+        self.layoutWidget = QWidget()  # (parent=self) generates a warning
         self.layoutWidget.setLayout(self.layout)
         self.setCentralWidget(self.layoutWidget)
 
@@ -73,7 +77,7 @@ class asyncWorker(QThread):
         self._running = False
 
     def run(self, listenPort=12345, sockSize=512):
-        global CURRENT_NODE, PACKET
+        global CURRENTLY_SELECTED, nodeStatuses
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # Create a UDP socket
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # Allow multiple sockets to use the same PORT number
         sock.settimeout(0.3)  # Set a timeout so the socket doesn't block indefinitely when trying to receive data
@@ -83,12 +87,15 @@ class asyncWorker(QThread):
         while self._running:
             try:
                 PACKET = pickle.loads(sock.recvfrom(sockSize)[0])
-                if CURRENT_NODE in PACKET['ip']:  # TODO: Fix this if statement (if the packet is from the currently selected node). This is a hacky way to do it
+
+                nodeStatuses[PACKET['ip']] = PACKET, time.time()
+
+                if CURRENTLY_SELECTED in PACKET['ip']:  # TODO: Fix this if statement (if the packet is from the currently selected node). This is a hacky way to do it
                     mWindow.nodeSelector.address.setText(PACKET['ip'])
                     mWindow.powerWidget.power.setText(f"{PACKET['current']*PACKET['voltage']} W")
-                    mWindow.stateText.stateText.setText(str(PACKET['state']))
+                    mWindow.stateText.setText(str(PACKET['state']))
                     if DEBUG:
-                        print(f"State for Node {CURRENT_NODE} is {PACKET}")
+                        print(f"State for Node {CURRENTLY_SELECTED} is {PACKET}")
             except socket.timeout:
                 pass
             except Exception as e:
@@ -113,52 +120,52 @@ class PowerWidget(QWidget):
         self.setLayout(self.layout)
 
 
-class RefreshWidget(QWidget):
-    def __init__(self, parent=None, size=20):
-        super().__init__(parent=parent)
-
-        self.button = QPushButton(icon=QIcon('images/refresh.png'), parent=self)
-        self.button.setIconSize(QSize(size, size))
-        # self.button.clicked.connect(self.refreshNodesList)# FIX THE FUNCTION FIRST
-
-        self.movie = QMovie("images/refresh.gif")
-        self.movie.frameChanged.connect(self.update_icon)
-        self.button.clicked.connect(self.play_gif)
-
-    def refreshNodesList(self) -> None:
-        """
-        # global nodeIPs
-        # nodeIPs = []
-
-        # # -------------------- change so it works in any situation. currently only works when connected to nodes directly on ethernet --------------------
-        # # -------------------- if any other devices is connected to the network, it will be added to the list when it should not --------------------
-        # # -------------------- could be fixed by passively listening for broadcast messages instead. but this way you cant choose offline nodes  ---------
-
-        # output = subprocess.run(['ip', 'route'], capture_output=True, text=True).stdout.splitlines()
-        # gateIP = output[0].split(' ')[2]  # get the gateway ip of the current network
-        # cidr = output[1].split(' ')[0]  # get the cidr of the current network
-
-        # lines = subprocess.run(['sudo', 'arp-scan', cidr, '-x', '-q', '-g'], capture_output=True, text=True).stdout.splitlines()
-        # for line in lines:  # for every found node in the network
-        #     nodeIPs.append(line.split('\t')[0])  # add the ip of that node to the list
-        # print(nodeIPs)
-
-        # if selfIP in nodeIPs:
-        #     nodeIPs.remove(selfIP)  # removing my own ip from the list
-        # if gateIP in nodeIPs:
-        #     nodeIPs.remove(gateIP)  # removing gateway ip from the list
-        """
-        pass
-
-    def play_gif(self):
-        if self.movie.state() == QMovie.Running:
-            self.movie.stop()
-            self.button.setIcon(QPixmap("images/refresh.png"))
-        else:
-            self.movie.start()
-
-    def update_icon(self):
-        self.button.setIcon(self.movie.currentPixmap())
+# class RefreshWidget(QWidget):
+#     def __init__(self, parent=None, size=20):
+#         super().__init__(parent=parent)
+#
+#         self.refresh_button = QPushButton(icon=QIcon('images/refresh.png'), parent=self)
+#         self.refresh_button.setIconSize(QSize(size, size))
+#         # self.button.clicked.connect(self.refreshNodesList)# FIX THE FUNCTION FIRST
+#
+#         self.refresh_gif = QMovie("images/refresh.gif")
+#         self.refresh_gif.frameChanged.connect(self.update_refresh_icon)
+#         self.refresh_button.clicked.connect(self.play_gif)
+#
+#     def refreshNodesList(self) -> None:
+#         """
+#         # global nodeIPs
+#         # nodeIPs = []
+#
+#         # # -------------------- change so it works in any situation. currently only works when connected to nodes directly on ethernet --------------------
+#         # # -------------------- if any other devices is connected to the network, it will be added to the list when it should not --------------------
+#         # # -------------------- could be fixed by passively listening for broadcast messages instead. but this way you cant choose offline nodes  ---------
+#
+#         # output = subprocess.run(['ip', 'route'], capture_output=True, text=True).stdout.splitlines()
+#         # gateIP = output[0].split(' ')[2]  # get the gateway ip of the current network
+#         # cidr = output[1].split(' ')[0]  # get the cidr of the current network
+#
+#         # lines = subprocess.run(['sudo', 'arp-scan', cidr, '-x', '-q', '-g'], capture_output=True, text=True).stdout.splitlines()
+#         # for line in lines:  # for every found node in the network
+#         #     nodeIPs.append(line.split('\t')[0])  # add the ip of that node to the list
+#         # print(nodeIPs)
+#
+#         # if selfIP in nodeIPs:
+#         #     nodeIPs.remove(selfIP)  # removing my own ip from the list
+#         # if gateIP in nodeIPs:
+#         #     nodeIPs.remove(gateIP)  # removing gateway ip from the list
+#         """
+#         pass
+#
+#     def play_gif(self):
+#         if self.refresh_gif.state() == QMovie.Running:
+#             self.refresh_gif.stop()
+#             self.refresh_button.setIcon(QPixmap("images/refresh.png"))
+#         else:
+#             self.refresh_gif.start()
+#
+#     def update_refresh_icon(self):
+#         self.refresh_button.setIcon(self.refresh_gif.currentPixmap())
 
 
 class ManualModeWidget(QWidget):
@@ -191,14 +198,12 @@ class NodeSelectionWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent=parent)
 
-        # Create the combo box and set its items
         self.combo_box = QComboBox()
         self.combo_box.addItems(["Select a Node", "139", "140", "141", "142"])
         self.combo_box.currentIndexChanged.connect(self.combo_box_index_changed)
-        # self.combo_box.setStyleSheet("color: grey; border-radius: 1px; border: 1px solid grey;")
 
-        self.refreshButton = RefreshWidget(parent=self)
-        self.refreshButton.setToolTip("Update the nodes available")
+        # self.refreshButton = RefreshWidget(parent=self)
+        # self.refreshButton.setToolTip("Update the nodes available")
 
         self.label1 = QLabel("Currently viewing:")
         self.label2 = QLabel("IP of Node: ")
@@ -213,21 +218,19 @@ class NodeSelectionWidget(QWidget):
         self.layout = QHBoxLayout()
         self.layout.addWidget(self.label1, 0)
         self.layout.addWidget(self.combo_box, 1)
-        self.layout.addWidget(self.refreshButton, 2)
+        # self.layout.addWidget(self.refreshButton, 2)
         self.layout.addWidget(self.label2, 3, Qt.AlignRight)
         self.layout.addWidget(self.address, 4)
         self.setLayout(self.layout)
 
     def combo_box_index_changed(self):
-        global CURRENT_NODE
-        CURRENT_NODE = self.combo_box.currentText()
-
-        # Every time we pick a new node, the slider should be unchecked
+        global CURRENTLY_SELECTED
+        CURRENTLY_SELECTED = self.combo_box.currentText()
         mWindow.manualMode.check.setChecked(False)
 
-        if CURRENT_NODE != "Select a Node":
+        if CURRENTLY_SELECTED != "Select a Node":
             self.address.setText('Loading...')
-            mWindow.stateText.stateText.setText('Loading...')
+            mWindow.stateText.setText('Loading...')
             mWindow.powerWidget.power.setText('Loading...')
             mWindow.manualMode.check.setEnabled(True)
 
@@ -236,13 +239,13 @@ class NodeSelectionWidget(QWidget):
             mWindow.manualMode.check.setToolTip("Slide to enable manual mode")
         else:
             self.address.setText('Select a Node')
-            mWindow.stateText.stateText.setText('Select a Node')
+            mWindow.stateText.setText('Select a Node')
             mWindow.powerWidget.power.setText('Select a Node')
             mWindow.manualMode.check.setChecked(False)
             mWindow.manualMode.check.setEnabled(False)
             mWindow.manualMode.check.setToolTip("Please select a node first")
 
-        print(f"Selected Node: {CURRENT_NODE}")  # Print the selected item's index to the console
+        print(f"Selected Node: {CURRENTLY_SELECTED}")  # Print the selected item's index to the console
 
 
 class ManualButtonsWidget(QWidget):
@@ -281,34 +284,7 @@ class ManualButtonsWidget(QWidget):
             button.setEnabled(state)
 
 
-class CurrentStateWidget(QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent=parent)
-        self.stateText = QLineEdit(self)
-        self.stateText.setText('Current State')
-        self.stateText.setAlignment(Qt.AlignCenter)
-        self.stateText.setReadOnly(True)
-        self.stateText.setMinimumHeight(100)
-        self.stateText.setStyleSheet("color: grey; font: 24pt; text-align: center; border-radius: 10px; border: 1px solid grey;")
-
-        self.layout = QHBoxLayout()
-        self.layout.addWidget(self.stateText, 1)
-        self.setLayout(self.layout)
-
-    def resizeEvent(self, event):
-        pixmap = QPixmap(self.size())
-        painter = QPainter(pixmap)
-        painter.fillRect(pixmap.rect(), QColor(255, 255, 255))
-        painter.setBrush(QColor(0, 0, 0))
-        painter.drawRoundedRect(pixmap.rect(), 25, 25)
-        self.setMask(pixmap.mask())
-        painter.end()
-        # self.stateText.setMinimumHeight(self.height() - 20)
-
-
 if __name__ == '__main__':
-    selfIP = socket.gethostbyname(socket.gethostname())
-    nodeIPs = ["192.168.137.139", "192.168.137.140", "192.168.137.141", "192.168.137.142", "192.168.137.143"]
     if 'darkmode' in sys.argv:
         sys.argv += ['-platform', 'windows:darkmode=2']
     app = QApplication(sys.argv)

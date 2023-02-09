@@ -22,7 +22,7 @@ class NodeState(Enum):
         return self.name
 
 
-class ProcState(Enum):
+class ProcessState(Enum):
     RUNNING = auto()  # Process is running
     WAITING = auto()  # Process is waiting to be started
     TERMINATED = auto()  # Process is terminated forcefully
@@ -49,16 +49,17 @@ class Process:
 
     def __init__(self, name: str):
         print("TODO: Process __init__ not implemented yet.")
-        self.procState = ProcState.NONE
+        self.procState = ProcessState.NONE
 
     def create(self, name: str, location: str, aliasIP: IPv4Address, pid: int):
+        print("TODO: Process create() not implemented yet.")
         self.procName = name
         self.location = location
         self.aliasIP = aliasIP  # getAvailableIP()  # TODO: get an available IP address for the process (check list of used IPs and invert that list)
         self.pid = pid
 
     def __str__(self) -> str:
-        return f"Process: <Name:{self.procName}, PID:{self.getPID()}, IP:{self.aliasIP}, State:{self.getProcessState()}>"
+        return f"Process: <Name:{self.procName}, PID:{self.getPID()}, IP:{self.aliasIP}, State:{self.procState}>"
 
     def getProcessName(self) -> str:
         """Get the name of the process. This is the name of the executable, not the PID or anything else"""
@@ -256,24 +257,22 @@ def confirmNodeAvailable(ip: IPv4Address | str) -> bool:
     return False  # timed out
 
 
-def MainFSM():
+def MainFSM(process: Process):
     global selfState
-    process = None
     match selfState["state"]:  # (Like a switch statement in C)
         case NodeState.IDLE:  # idle State, should look inside project directory for files to run
             process = waitForProcReceive()
             if process is not None:
-                if process.run():
-                    selfState = NodeState.BUSY
-                else:
+                if process.run() == False:
                     print("Failed to start process thread. Process not started.")
                     sys.exit(1)
 
+                selfState = NodeState.BUSY
+
         case NodeState.BUSY:
-            migrateReceived = awaitMigrateSignal()
-            if migrateReceived:
+            if awaitMigrateSignal():
                 selfState = NodeState.MIGRATING
-            elif process.isComplete():
+            elif process.procState == ProcessState.FINISHED:
                 selfState = NodeState.IDLE
                 # sendProcessResultsToUser() # TODO: if we want to send the results to the user, we can do that here
 
@@ -301,9 +300,9 @@ def main():
         broadcaster.start()
         receiver = BroadcastReceiver()
         receiver.start()
-
+        process = Process()
         while True:
-            # handleStates()  # Main FSM
+            # handleStates(process)  # Main FSM
             pass
     except KeyboardInterrupt:  # Handle keyboard interrupts
         print("Exiting...")
