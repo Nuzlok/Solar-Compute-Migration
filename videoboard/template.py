@@ -1,12 +1,8 @@
 # Template HTML code for header and script
 
 header = '''
-<head>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-body {
-    font-family: system-ui;
-}
+<head> <meta name="viewport" content="width=device-width, initial-scale=1"> <style>
+body { font-family: system-ui; }
 
 .accordion {
     background-color: #eee;
@@ -21,9 +17,7 @@ body {
     transition: 0.4s;
 }
 
-.active, .accordion:hover {
-    background-color: #ccc;
-}
+.active, .accordion:hover { background-color: #ccc; }
 
 .accordion:after {
     content: "\\02795";
@@ -33,9 +27,7 @@ body {
     margin-left: 5px;
 }
 
-.active:after {
-    content: "\\2796";
-}
+.active:after { content: "\\2796"; }
 
 .panel {
     padding: 0 18px;
@@ -60,8 +52,7 @@ img, video {
     width: auto;
 }
 
-</style>
-</head>
+</style> </head>
 '''
 
 
@@ -86,38 +77,26 @@ for (var i = 0; i < accordions.length; i++) {
 
             $.post(url, message).done(function(data) {
                 var htmlOld = currentAcc.innerHTML;
-                var htmlNew = htmlOld.replace(/\\[[\\d*] items\\]$/im,
-                    "[" + data.length + " items]");
+                var htmlNew = htmlOld.replace(/\\[[\\d*] items\\]$/im, "[" + data.length + " items]");
                 currentAcc.innerHTML = htmlNew;
 
-                while (panel.firstChild) {
-                    panel.removeChild(panel.firstChild);
-                }
+                while (panel.firstChild) { panel.removeChild(panel.firstChild); }
 
                 var itemHTML;
                 for (var j = 0; j < data.length; j++) {
                     var newItem = document.createElement('div');
                     var ext = data[j]["path"].split('.').pop();
                     if (ext == "mp4") {
-                        itemHTML = "<video src=\\"" + data[j]["path"] +
-                            "\\" controls type=\\"video/mp4\\"></video>";
-                    } else {
-                        itemHTML = "<img src=\\"" + data[j]["path"] +
-                            "\\"></img>";
-                    }
+                        itemHTML = "<video src=\\"" + data[j]["path"] + "\\" controls type=\\"video/mp4\\"></video>";
+                    } else { itemHTML = "<img src=\\"" + data[j]["path"] +  "\\"></img>"; }
 
                     var fileName = data[j]["name"];
                     var fileNameLength = fileName.length;
                     var maxLength = 30;
-                    if (fileNameLength > maxLength) {
-                        fileName = fileName.substring(0, maxLength - 10) + "..." +
-                            fileName.substring(fileNameLength - 7);
-                    }
+                    if (fileNameLength > maxLength) { fileName = fileName.substring(0, maxLength - 10) + "..." + fileName.substring(fileNameLength - 7); }
 
                     newItem.className = "flex-item";
-                    newItem.innerHTML = "<a href=\\"" + data[j]["path"] + "\\">" +
-                        fileName + "</a><br>" +
-                        data[j]["time"] + "<br>" + itemHTML;
+                    newItem.innerHTML = "<a href=\\"" + data[j]["path"] + "\\">" + fileName + "</a><br>" + itemHTML;
                     panel.appendChild(newItem);
                 }
             });

@@ -1,4 +1,3 @@
-import argparse
 import http.server
 import json
 import mimetypes
@@ -6,8 +5,10 @@ import os
 import shutil
 import time
 import urllib
+from argparse import ArgumentParser
 from collections import defaultdict
 from pathlib import Path
+from socketserver import ThreadingMixIn
 
 from template import header, script
 
@@ -37,9 +38,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         for item_path in items:
             item_name = item_path.rsplit('/', 1)[-1]
             mod_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(os.path.getmtime(item_path)))
-            return_info.append({'name': item_name,
-                                'path': item_path,
-                                'time': mod_time})
+            return_info.append({'name': item_name, 'path': item_path})
         self.wfile.write(json.dumps(return_info).encode('utf-8'))
 
     def do_HEAD(self):
@@ -63,22 +62,14 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                     item_name = item_path
                 item_names[dir_name].append((item_path, item_name))
 
-            # Build a html file
-            head_html = header.replace('max-height: 320px;',
-                                       f'max-height: {self._max_height}px;')
-            head_html = head_html.replace('max-width: 320px;',
-                                          f'max-width: {self._max_width}px;')
-            script_html = script.replace('max_length = 30',
-                                         f'max_length = {self._max_file_name_length}')
-            if not self._display:
-                script_html = script_html.replace('+ itemHTML', '+ ""')
+            # Build the html response with the file list
+            head_html = header.replace('max-height: 320px;',  f'max-height: {self._max_height}px;').replace('max-width: 320px;', f'max-width: {self._max_width}px;')
+            script_html = script.replace('max_length = 30',   f'max_length = {self._max_file_name_length}')
 
-            html = ['<!DOCTYPE html>', '<html>', head_html, '<body>']
-            for dir_name in sorted(item_names.keys()):
-                html += ['<button class="accordion">', dir_name,
-                         f'[{len(item_names[dir_name])} items]', '</button>',
-                         '<div class="panel">', '</div>']
-            html += [script_html, '</body>', '</html>']
+            html = [f'<!DOCTYPE html><html>{head_html}<body>']
+            for dir_name in item_names.keys():
+                html.append(f'<button class="accordion">{dir_name}[{len(item_names[dir_name])} items]</button><div class="panel"></div>')
+            html.append(f'{script_html}</body></html>')
 
             self.send_response(200)
             self.send_header('Content-type', 'text/html; charset=utf-8')
@@ -86,15 +77,13 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write('\n'.join(html).encode())
         else:
             # Send a raw file (video or image)
-            f = self.send_head()
-            if f:
+            if f := self.send_head():
                 if self._range:
                     s, e = self._range
                     buf_size = 64 * 1024
                     f.seek(s)
                     while True:
-                        to_read = min(buf_size, e - f.tell() + 1)
-                        buf = f.read(to_read)
+                        buf = f.read(min(buf_size, e - f.tell() + 1))
                         if not buf:
                             break
                         self.wfile.write(buf)
@@ -126,58 +115,44 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             # transmitted *less* than the content-length!
             f = open(path, 'rb')
         except IOError:
-            self.send_error(404, "File not found")
-            return None
+            return self.send_error(404, "File not found")
 
         fs = os.fstat(f.fileno())
         file_size = content_size = fs[6]
 
-        # Support byte-range requests
-        is_range = 'Range' in self.headers
-        if is_range:
+        if 'Range' in self.headers:  # Support byte-range requests
             s, e = self.headers['Range'].strip().split('=')[1].split('-')
             try:
-                if s == "":
-                    # bytes=-5 means [size-5:size]
-                    e = int(e)
-                    s = file_size - e
-                else:
-                    s = int(s)
-                    if e == "":
-                        e = file_size - 1
-                    else:
-                        e = int(e)
-            except ValueError as ex:
-                self.send_error(400, "Invalid range")
-                return None
-
-            if s >= file_size or e >= file_size or s > e:
-                self.send_error(400, "Invalid range")
-                return None
+                s = int(s) if s else file_size - int(e)
+                e = int(e) if e else file_size - 1
+                if s >= file_size or e >= file_size or s > e:
+                    raise ValueError
+            except ValueError:
+                return self.send_error(400, "Invalid range")
             self._range = (s, e)
             content_size = e - s + 1
-        else:
-            self._range = None
-
-        if is_range:
             self.send_response(206)
-        else:
-            self.send_response(200)
-        self.send_header("Content-type", ctype)
-        if is_range:
             self.send_header('Accept-Ranges', 'bytes')
             self.send_header('Content-Range', f'bytes {s}-{e}/{file_size}')
+        else:
+            self._range = None
+            self.send_response(200)
+
+        self.send_header("Content-type", ctype)
         self.send_header("Content-Length", str(content_size))
         self.send_header("Last-Modified", self.date_time_string(fs.st_mtime))
         self.end_headers()
-
         return f
 
-    # Initialize extension maps
-    if not mimetypes.inited:
+    if mimetypes.inited is False:  # Initialize extension maps
         mimetypes.init()  # Try to read system mime.types
     extensions_map = mimetypes.types_map.copy()
     extensions_map.update({'': 'application/octet-stream'})
+
+
+class ThreadedHTTPServer(ThreadingMixIn, http.server.HTTPServer):
+    """Handle requests in a separate thread."""
+    pass
 
 
 def str2bool(v):
@@ -185,34 +160,17 @@ def str2bool(v):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        prog='videoboard',
-        description='A simple http server for visualizing videos and images',
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--port', type=int, default=8000,
-                        help='port number.')
-    parser.add_argument('--logdir', type=str, default='.',
-                        help='directory where videoboard '
-                             'will look for videos and images.')
-    parser.add_argument('--height', type=int, default=320,
-                        help='maximum height of image/video.')
-    parser.add_argument('--width', type=int, default=320,
-                        help='maximum width of image/video.')
-    parser.add_argument('--file_name_length', type=int, default=30,
-                        help='maximum length of file name.')
-    parser.add_argument('--recursive', type=str2bool, default=True,
-                        choices=[True, False],
-                        help='search files recursively.')
-    parser.add_argument('--display', type=str2bool, default=True,
-                        choices=[True, False],
-                        help='display videos and images.')
-    parser.add_argument('--bind_ip', type=str, default='',
-                        help='The address to bind the server to.')
-
+    parser = ArgumentParser(prog='videoboard_v2', description='A simple server for streaming media files')
+    parser.add_argument('--port', type=int, default=8000, help='port number.')
+    parser.add_argument('--logdir', type=str, default='.', help='directory where videoboard will look for videos and images.')
+    parser.add_argument('--height', type=int, default=320, help='maximum height of image/video.')
+    parser.add_argument('--width', type=int, default=320, help='maximum width of image/video.')
+    parser.add_argument('--file_name_length', type=int, default=30, help='maximum length of file name.')
+    parser.add_argument('--recursive', type=str2bool, default=True, choices=[True, False], help='search files recursively.')
+    parser.add_argument('--bind_ip', type=str, default='', help='The address to bind the server to.')
     args = parser.parse_args()
 
-    # Change directory to prevent access to directories other than logdir
-    os.chdir(args.logdir)
+    os.chdir(args.logdir)  # Change directory to prevent access to directories other than logdir
 
     class RequestHandlerWithArgs(RequestHandler):
         _logdir = '.'
@@ -220,11 +178,9 @@ def main():
         _max_width = args.width
         _max_file_name_length = args.file_name_length
         _recursive = args.recursive
-        _display = args.display
-
-    server = http.server.HTTPServer((args.bind_ip, args.port), RequestHandlerWithArgs)
 
     try:
+        server = ThreadedHTTPServer((args.bind_ip, args.port), RequestHandlerWithArgs)
         print(f'Run videoboard server on <IP:{args.bind_ip}, port:{args.port}>')
         server.serve_forever()
     except KeyboardInterrupt:
