@@ -261,42 +261,42 @@ def MainFSM(process: Process):
         selfState["state"] = NodeState.MIGRATING
     else:
         selfState["state"] = NodeState.IDLE
-    print(f"{vol=}, state={selfState['state']}")
+    print(f"{vol=:.5f}, state={selfState['state']}")
     time.sleep(0.05)  # make sure it doesnt hog the CPU
     return
 
     # ---- SKIP ----
-    match selfState["state"]:  # (Like a switch statement in C)
-        case NodeState.IDLE:   # idle State, should look inside project directory for files to run
-            process = waitForProcReceive()
-            if process is not None:
-                if process.run() == False:
-                    print("Failed to start process thread. Process not started.")
-                    sys.exit(1)
+    # match selfState["state"]:  # (Like a switch statement in C)
+    #     case NodeState.IDLE:   # idle State, should look inside project directory for files to run
+    #         process = waitForProcReceive()
+    #         if process is not None:
+    #             if process.run() == False:
+    #                 print("Failed to start process thread. Process not started.")
+    #                 sys.exit(1)
 
-                selfState = NodeState.BUSY
+    #             selfState = NodeState.BUSY
 
-        case NodeState.BUSY:
-            if awaitMigrateSignal():
-                selfState = NodeState.MIGRATING
-            elif process.procState == ProcessState.FINISHED:
-                selfState = NodeState.IDLE
-                # sendProcessResultsToUser() # TODO: if we want to send the results to the user, we can do that here
+    #     case NodeState.BUSY:
+    #         if awaitMigrateSignal():
+    #             selfState = NodeState.MIGRATING
+    #         elif process.procState == ProcessState.FINISHED:
+    #             selfState = NodeState.IDLE
+    #             # sendProcessResultsToUser() # TODO: if we want to send the results to the user, we can do that here
 
-        case NodeState.MIGRATING:
-            migrateProcessToAvaliableNode(process)
-            selfState = NodeState.IDLE
-            # # if migration command is manual, then keep the node in idle, else send to shutdown state
-            # selfState = NodeState.IDLE if isManualCMD else NodeState.SHUTDOWN
+    #     case NodeState.MIGRATING:
+    #         migrateProcessToAvaliableNode(process)
+    #         selfState = NodeState.IDLE
+    #         # # if migration command is manual, then keep the node in idle, else send to shutdown state
+    #         # selfState = NodeState.IDLE if isManualCMD else NodeState.SHUTDOWN
 
-        # case NodeState.SHUTDOWN:
-        #     # Do we need a shutdown state? I don't think so, but I'm leaving it here for now
-        #     # Node will shut down eventually with loss of power, but potentially leaving the option to return to
-        #     # Idle state if power does return and node somehow still can operate
-        #     if not isLossOfPower():
-        #         selfState = NodeState.IDLE
-    print(time.time(), selfState)
-    return selfState
+    #     # case NodeState.SHUTDOWN:
+    #     #     # Do we need a shutdown state? I don't think so, but I'm leaving it here for now
+    #     #     # Node will shut down eventually with loss of power, but potentially leaving the option to return to
+    #     #     # Idle state if power does return and node somehow still can operate
+    #     #     if not isLossOfPower():
+    #     #         selfState = NodeState.IDLE
+    # print(time.time(), selfState)
+    # return selfState
 
 
 def main():
@@ -305,7 +305,7 @@ def main():
         broadcaster.start()
         receiver = BroadcastReceiver()
         receiver.start()
-        process = Process()
+        process = Process("")
         print(f"reading voltage from pin 2")
         print(f"reading current from pin 0 and 1")
         while True:
