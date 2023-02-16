@@ -88,7 +88,7 @@ class Process:
         """
         # self.pid
         # print(f"Starting process: {self.procName} on {self.aliasIP}")
-        return False
+        return True
 
     def dump(self, command=None, dumpToDisk=False) -> bool:
         """ Dump the process using CRIU. Accepts a command to run after the dump is complete. returns True if successful"""
@@ -114,15 +114,14 @@ voltage = MCP3008(channel=2, differential=False, max_voltage=5)  # single ended 
 current = MCP3008(channel=1, differential=True, max_voltage=5)  # differential on channel 1 and 0, might need to change to pin 0 if output is inverted
 
 
-def readPower(vScale=5, cScale=1) -> tuple:
-    """ `This function is not yet calibrated` """
-    return voltage.value * vScale, current.value * cScale
-
-
-def isLossOfPower(vThresh=4.8, cThresh=0.5) -> bool:
+def isLossOfPower(vThresh=4.8, cThresh=0.5, vScale=5, cScale=1) -> bool:
     """ Decide when node is losing power by comparing the voltage and current to a threshold. """
-    voltage, current = readPower()
-    return (voltage < vThresh or current < cThresh)
+    global voltage, current
+
+    vol, curr = voltage.value * vScale, current.value * cScale
+
+    return vol < vThresh  # just check voltage for now, current is tested
+    # return (vol < vThresh or curr < cThresh)
 
 
 def awaitMigrateSignal(forceMigrate=False) -> bool:
@@ -156,6 +155,9 @@ def waitForProcReceive() -> Process:
     Check specified directory for files of a process with finish flag.
     if files are found with the flag, create a process object and return it.
     """
+
+    return Process("")  # For testing purposes
+
     # global DIRECTORY # Not sure if I need this or not.
     received = next(iter(os.listdir(DIRECTORY)), None)  # check if there are any files in the directory
     if received == None:
@@ -182,7 +184,7 @@ def checkpointAndMigrateProcessToNode(proc: Process, receivingIP: IPv4Address):
     if confirmNodeAvailable(receivingIP) != NodeState.IDLE:
         raise Exception("Receiving node is not ready to receive process")
 
-    if remIPalias(proc.getAliasedIP()) == False:
+    if IPalias(proc.getAliasedIP(), False) == False:
         raise Exception("Failed to remove IP alias from current node")
 
     if rsyncProcessToNode(proc, receivingIP) == False:
@@ -221,16 +223,13 @@ def rsyncProcessToNode(proc: Process, receivingIP: IPv4Address, password="pi"):
         print("File transfer failed")
 
 
-def addIPalias(address: IPv4Address) -> bool:
-    """add IP alias to current node"""
+def IPalias(address: IPv4Address, add: bool) -> bool:
+    """Handle IP alias to current node"""
     return True
-    return os.system(f"ip addr add {address}/24 dev eth0")
-
-
-def remIPalias(address: IPv4Address) -> bool:
-    """remove IP alias to current node"""
-    return True
-    return os.system(f"ip addr del {address}/24 dev eth0")
+    if add:
+        return os.system(f"ip addr add {address}/24 dev eth0")
+    else:
+        return os.system(f"ip addr del {address}/24 dev eth0")
 
 
 def findAvailableNode() -> IPv4Address:
@@ -256,47 +255,41 @@ def confirmNodeAvailable(ip: IPv4Address) -> bool:
 
 def MainFSM(process: Process):
     global selfState
-    vol = readPower()[0]
-    if vol < 4.7:  # uncalibrated threshold for low voltage
+    print(f"{voltage.value=:.5f}, state={selfState['state']}, Press Ctrl-C to exit")
+    time.sleep(0.05)  # make sure it doesnt hog the CPU
+
+    if isLossOfPower(vThresh=4.8):
         selfState["state"] = NodeState.MIGRATING
+    elif isLossOfPower(vThresh=4.6):
+        selfState["state"] = NodeState.SHUTDOWN
     else:
         selfState["state"] = NodeState.IDLE
-    print(f"{vol=:.5f}, state={selfState['state']}")
-    time.sleep(0.05)  # make sure it doesnt hog the CPU
-    return
 
-    # ---- SKIP ----
-    # match selfState["state"]:  # (Like a switch statement in C)
-    #     case NodeState.IDLE:   # idle State, should look inside project directory for files to run
-    #         process = waitForProcReceive()
-    #         if process is not None:
-    #             if process.run() == False:
-    #                 print("Failed to start process thread. Process not started.")
-    #                 sys.exit(1)
+    if selfState["state"] == NodeState.IDLE:
+        # process = waitForProcReceive()
+        # if process:  # if we received a process
+        #     if process.run() == False:
+        #         raise RuntimeError("Failed to start process thread. Process not started.")
+        #     selfState["state"] = NodeState.BUSY
 
-    #             selfState = NodeState.BUSY
+        # elif awaitMigrateSignal():  # if we get a migrate signal while doing nothing, do nothing
+        #     selfState["state"] = NodeState.SHUTDOWN
+        pass
 
-    #     case NodeState.BUSY:
-    #         if awaitMigrateSignal():
-    #             selfState = NodeState.MIGRATING
-    #         elif process.procState == ProcessState.FINISHED:
-    #             selfState = NodeState.IDLE
-    #             # sendProcessResultsToUser() # TODO: if we want to send the results to the user, we can do that here
+    if selfState["state"] == NodeState.BUSY:
+        # if awaitMigrateSignal():
+        #     selfState["state"] = NodeState.MIGRATING
+        # elif process.procState == ProcessState.FINISHED:
+        #     selfState["state"] = NodeState.IDLE
+        #     # sendProcessResultsToUser() # TODO: if we want to send the results to the user, we can do that here
+        pass
 
-    #     case NodeState.MIGRATING:
-    #         migrateProcessToAvaliableNode(process)
-    #         selfState = NodeState.IDLE
-    #         # # if migration command is manual, then keep the node in idle, else send to shutdown state
-    #         # selfState = NodeState.IDLE if isManualCMD else NodeState.SHUTDOWN
-
-    #     # case NodeState.SHUTDOWN:
-    #     #     # Do we need a shutdown state? I don't think so, but I'm leaving it here for now
-    #     #     # Node will shut down eventually with loss of power, but potentially leaving the option to return to
-    #     #     # Idle state if power does return and node somehow still can operate
-    #     #     if not isLossOfPower():
-    #     #         selfState = NodeState.IDLE
-    # print(time.time(), selfState)
-    # return selfState
+    if selfState["state"] == NodeState.MIGRATING:
+        # checkpointAndMigrateProcessToNode(process)
+        # selfState["state"] = NodeState.IDLE
+        # # if migration command is manual, then keep the node in idle, else send to shutdown state
+        # selfState["state"] = NodeState.IDLE if isManualCMD else NodeState.SHUTDOWN
+        pass
 
 
 def main():
@@ -310,23 +303,13 @@ def main():
         print(f"reading current from pin 0 and 1")
         while True:
             MainFSM(process)  # Main FSM
-    except KeyboardInterrupt:  # Handle keyboard interrupts
+    except (KeyboardInterrupt, Exception) as e:
+        broadcaster.stop()
+        broadcaster.join()
+        receiver.stop()
+        receiver.join()
         print("Exiting...")
-        broadcaster.stop()
-        broadcaster.join()
-        receiver.stop()
-        receiver.join()
-
-        sys.exit(0)
-
-    except Exception as e:  # Handle any exceptions
-        print(e, "\nExiting...")
-        broadcaster.stop()
-        receiver.stop()
-        broadcaster.join()
-        receiver.join()
-
-        sys.exit(1)  # Exit with error code 1
+        raise e
 
 
 class BroadcastSender(threading.Thread):
