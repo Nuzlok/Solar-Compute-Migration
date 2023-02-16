@@ -9,7 +9,13 @@ import time
 from enum import Enum, auto
 from ipaddress import IPv4Address
 
-from gpiozero import MCP3008
+try:
+    import RPi.GPIO  # ensure pin factory is set to RPi.GPIO
+    import spidev  # only for gpio pins on raspberry pi
+    from gpiozero import MCP3008
+except ImportError as e:
+    print("Make sure gpiozero, spidev, and RPi.GPIO are installed")
+    raise Exception("Make sure gpiozero, spidev, and RPi.GPIO are installed")
 
 
 class NodeState(Enum):
@@ -35,10 +41,8 @@ class ProcessState(Enum):
 
 
 selfState = {"ip": "", "status": "online", "state": NodeState.IDLE, "current": 0, "voltage": 0, "manual": False, "migrate_cmd": False, "reboot_cmd": False, "shutdown_cmd": False, }
-uniqueOtherNodeStatuses = {}
-processID = ""
-EXIT = False
-DIRECTORY = "/home/pi/ReceivedProcesses/"
+uniqueOtherNodeStatuses = {}  # set of unique statuses from other nodes (all nodes except this one). indexed by IP address
+DIRECTORY = "/home/pi/ReceivedProcesses/"  # directory to store processes that are received from other nodes
 
 
 class Process:
@@ -114,12 +118,12 @@ def readPower() -> tuple[float, float]:
     if not os.uname().machine.startswith("arm"):
         raise Exception("ADC can only be run on a raspberry pi")
 
-    voltage = MCP3008(channel=2, differential=False, max_voltage=3.3)  # single ended on channel 2
-    current = MCP3008(channel=1, differential=True, max_voltage=3.3)  # differential on channel 1 and 0, might need to change to pin 0 if output is inverted
+    voltage = MCP3008(channel=2, differential=False, max_voltage=5)  # single ended on channel 2
+    current = MCP3008(channel=1, differential=True, max_voltage=5)  # differential on channel 1 and 0, might need to change to pin 0 if output is inverted
 
     time.sleep(0.1)  # wait for the ADC to settle
 
-    return voltage.value * 1, current.value * 1
+    return voltage.value * 5, current.value * 1
 
 
 def isLossOfPower(vThresh=0.5, cThresh=0.5) -> bool:
@@ -259,8 +263,15 @@ def confirmNodeAvailable(ip: IPv4Address | str) -> bool:
 
 def MainFSM(process: Process):
     global selfState
+    vol = readPower()[0]
+    if vol < 4.7:
+        selfState["state"] = NodeState.MIGRATING
+    else:
+        selfState["state"] = NodeState.IDLE
+    print(f"{time.time()}, {vol=}, {selfState['state']=}")
+    return
     match selfState["state"]:  # (Like a switch statement in C)
-        case NodeState.IDLE:  # idle State, should look inside project directory for files to run
+        case NodeState.IDLE:   # idle State, should look inside project directory for files to run
             process = waitForProcReceive()
             if process is not None:
                 if process.run() == False:
@@ -288,6 +299,7 @@ def MainFSM(process: Process):
         #     # Idle state if power does return and node somehow still can operate
         #     if not isLossOfPower():
         #         selfState = NodeState.IDLE
+    print(time.time(), selfState)
     return selfState
 
 
@@ -334,13 +346,13 @@ class BroadcastSender(threading.Thread):
         super().__init__()
 
     def run(self):
-        global selfState, EXIT
+        global selfState
         while self._running:
             ran = random.randrange(139, 143, 1)
             selfState["ip"] = f"192.168.137.{ran}"  # this is temporary for testing. will be replaced with actual ip when we have a network-------------
             self.socket.sendto(pickle.dumps(selfState), (self.baddress, self.port))
             time.sleep(self.send_delay)
-            print(f"broadcasting state {selfState['ip']}")
+            # print(f"broadcasting state {selfState['ip']}")
         print("Closing Socket!")
         self.socket.close()
         print("Stopped Broadcast!")
