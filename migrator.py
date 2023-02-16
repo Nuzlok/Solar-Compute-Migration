@@ -309,7 +309,8 @@ def main():
         receiver.stop()
         receiver.join()
         print("Exiting...")
-        raise e
+        if not isinstance(e, KeyboardInterrupt):
+            raise e
 
 
 class BroadcastSender(threading.Thread):
