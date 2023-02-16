@@ -73,7 +73,7 @@ class Process:
         """Get the aliased IP address of the process"""
         return self.aliasIP
 
-    def getDirectory(self) -> str | None:
+    def getDirectory(self) -> str:
         """Get the directory of the process. returns None if process does not have a directory"""
         return self.location
 
@@ -109,24 +109,17 @@ class Process:
         return True
 
 
-def readPower() -> tuple[float, float]:
-    """
-    `Note: This function is not yet calibrated and should only be run on a raspberry pi`\n
-    Read voltage and current from GPIO pins.
-    https://gpiozero.readthedocs.io/en/stable/api_input.html#mcp3008
-    """
-    if not os.uname().machine.startswith("arm"):
-        raise Exception("ADC can only be run on a raspberry pi")
-
-    voltage = MCP3008(channel=2, differential=False, max_voltage=5)  # single ended on channel 2
-    current = MCP3008(channel=1, differential=True, max_voltage=5)  # differential on channel 1 and 0, might need to change to pin 0 if output is inverted
-
-    time.sleep(0.1)  # wait for the ADC to settle
-
-    return voltage.value * 5, current.value * 1
+# https://gpiozero.readthedocs.io/en/stable/api_input.html#mcp3008
+voltage = MCP3008(channel=2, differential=False, max_voltage=5)  # single ended on channel 2
+current = MCP3008(channel=1, differential=True, max_voltage=5)  # differential on channel 1 and 0, might need to change to pin 0 if output is inverted
 
 
-def isLossOfPower(vThresh=0.5, cThresh=0.5) -> bool:
+def readPower(vScale=5, cScale=1) -> tuple:
+    """ `This function is not yet calibrated` """
+    return voltage.value * vScale, current.value * cScale
+
+
+def isLossOfPower(vThresh=4.8, cThresh=0.5) -> bool:
     """ Decide when node is losing power by comparing the voltage and current to a threshold. """
     voltage, current = readPower()
     return (voltage < vThresh or current < cThresh)
@@ -158,7 +151,7 @@ def sendFinishTransferFlag(path: str, ip: IPv4Address, username="pi", password="
     print("File updated successfully")
 
 
-def waitForProcReceive() -> Process | None:
+def waitForProcReceive() -> Process:
     """
     Check specified directory for files of a process with finish flag.
     if files are found with the flag, create a process object and return it.
@@ -211,7 +204,7 @@ def criuRestore(path, command=None) -> bool:
     return True
 
 
-def rsyncProcessToNode(proc: Process, receivingIP: IPv4Address | str, password="pi"):
+def rsyncProcessToNode(proc: Process, receivingIP: IPv4Address, password="pi"):
     """rsync dumped files to receiving node"""
 
     # we use expect to automate the password prompt for scp/rsync so we don't have to type it in manually
@@ -228,19 +221,19 @@ def rsyncProcessToNode(proc: Process, receivingIP: IPv4Address | str, password="
         print("File transfer failed")
 
 
-def addIPalias(address: IPv4Address | str) -> bool:
+def addIPalias(address: IPv4Address) -> bool:
     """add IP alias to current node"""
     return True
     return os.system(f"ip addr add {address}/24 dev eth0")
 
 
-def remIPalias(address: IPv4Address | str) -> bool:
+def remIPalias(address: IPv4Address) -> bool:
     """remove IP alias to current node"""
     return True
     return os.system(f"ip addr del {address}/24 dev eth0")
 
 
-def findAvailableNode() -> IPv4Address | None:
+def findAvailableNode() -> IPv4Address:
     """Find an available node to migrate to"""
     available = []
     for ip, (packet, _) in uniqueOtherNodeStatuses:  # TODO: Check if this is the correct syntax
@@ -252,7 +245,7 @@ def findAvailableNode() -> IPv4Address | None:
     return available[0] if len(available) > 0 else None
 
 
-def confirmNodeAvailable(ip: IPv4Address | str) -> bool:
+def confirmNodeAvailable(ip: IPv4Address) -> bool:
     """Confirm that the node is available to receive a process by waiting for a new packet from the node"""
     last_time = uniqueOtherNodeStatuses[ip][1]
     while time.time() < last_time + 10:  # wait maximum 10 seconds for a new packet from the node
@@ -264,12 +257,15 @@ def confirmNodeAvailable(ip: IPv4Address | str) -> bool:
 def MainFSM(process: Process):
     global selfState
     vol = readPower()[0]
-    if vol < 4.7:
+    if vol < 4.7:  # uncalibrated threshold for low voltage
         selfState["state"] = NodeState.MIGRATING
     else:
         selfState["state"] = NodeState.IDLE
-    print(f"{time.time()}, {vol=}, {selfState['state']=}")
+    print(f"{vol=}, state={selfState['state']}")
+    time.sleep(0.05)  # make sure it doesnt hog the CPU
     return
+
+    # ---- SKIP ----
     match selfState["state"]:  # (Like a switch statement in C)
         case NodeState.IDLE:   # idle State, should look inside project directory for files to run
             process = waitForProcReceive()
@@ -304,18 +300,16 @@ def MainFSM(process: Process):
 
 
 def main():
-    print("Main function not implemented. Do not run this yet.")
-    exit()
-    # state["ip"] = socket.gethostbyname(socket.gethostname())
     try:
         broadcaster = BroadcastSender()  # Start broadcast sender and receiver threads
         broadcaster.start()
         receiver = BroadcastReceiver()
         receiver.start()
         process = Process()
+        print(f"reading voltage from pin 2")
+        print(f"reading current from pin 0 and 1")
         while True:
-            # handleStates(process)  # Main FSM
-            pass
+            MainFSM(process)  # Main FSM
     except KeyboardInterrupt:  # Handle keyboard interrupts
         print("Exiting...")
         broadcaster.stop()
