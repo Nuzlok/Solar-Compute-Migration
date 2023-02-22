@@ -108,10 +108,10 @@ class Process:
             return False
         return True
 
-
-# https://gpiozero.readthedocs.io/en/stable/api_input.html#mcp3008
-voltage = MCP3008(channel=2, differential=False, max_voltage=5)  # single ended on channel 2
-current = MCP3008(channel=1, differential=True, max_voltage=5)  # differential on channel 1 and 0, might need to change to pin 0 if output is inverted
+def initialize_gpio():
+    # https://gpiozero.readthedocs.io/en/stable/api_input.html#mcp3008
+    voltage = MCP3008(channel=2, differential=False, max_voltage=5)  # single ended on channel 2
+    current = MCP3008(channel=1, differential=True, max_voltage=5)  # differential on channel 1 and 0, might need to change to pin 0 if output is inverted
 
 
 def isLossOfPower(vThresh=4.8, cThresh=0.5, vScale=5, cScale=1) -> bool:
@@ -299,6 +299,7 @@ def main():
         receiver = BroadcastReceiver()
         receiver.start()
         process = Process("")
+        initialize_gpio() # Can comment out if not working with GPIO
         print(f"reading voltage from pin 2")
         print(f"reading current from pin 0 and 1")
         while True:
