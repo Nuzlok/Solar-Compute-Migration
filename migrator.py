@@ -108,15 +108,10 @@ class Process:
             return False
         return True
 
-def initialize_gpio():
-    # https://gpiozero.readthedocs.io/en/stable/api_input.html#mcp3008
-    voltage = MCP3008(channel=2, differential=False, max_voltage=5)  # single ended on channel 2
-    current = MCP3008(channel=1, differential=True, max_voltage=5)  # differential on channel 1 and 0, might need to change to pin 0 if output is inverted
 
 
 def isLossOfPower(vThresh=4.8, cThresh=0.5, vScale=5, cScale=1) -> bool:
     """ Decide when node is losing power by comparing the voltage and current to a threshold. """
-    global voltage, current
 
     vol, curr = voltage.value * vScale, current.value * cScale
 
@@ -293,13 +288,17 @@ def MainFSM(process: Process):
 
 
 def main():
+    global voltage, current
+
     try:
         broadcaster = BroadcastSender()  # Start broadcast sender and receiver threads
         broadcaster.start()
         receiver = BroadcastReceiver()
         receiver.start()
         process = Process("")
-        initialize_gpio() # Can comment out if not working with GPIO
+        # https://gpiozero.readthedocs.io/en/stable/api_input.html#mcp3008
+        voltage = MCP3008(channel=2, differential=False, max_voltage=5)  # single ended on channel 2
+        current = MCP3008(channel=1, differential=True, max_voltage=5)  # differential on channel 1 and 0, might need to change to pin 0 if output is inverted
         print(f"reading voltage from pin 2")
         print(f"reading current from pin 0 and 1")
         while True:
