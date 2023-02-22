@@ -115,8 +115,9 @@ def isLossOfPower(vThresh=4.8, cThresh=0.5, vScale=5, cScale=1) -> bool:
 
     vol, curr = voltage.value * vScale, current.value * cScale
 
-    return vol < vThresh  # just check voltage for now, current is tested
-    # return (vol < vThresh or curr < cThresh)
+    # TODO: scale panel voltage based on resistive drop in voltage, set default threshold from that
+
+    return vol < vThresh
 
 
 def awaitMigrateSignal(forceMigrate=False) -> bool:
@@ -253,9 +254,9 @@ def MainFSM(process: Process):
     print(f"{voltage.value=:.5f}, state={selfState['state']}, Press Ctrl-C to exit")
     time.sleep(0.05)  # make sure it doesnt hog the CPU
 
-    if isLossOfPower(vThresh=4.8):
+    if isLossOfPower(vThresh=4.9):
         selfState["state"] = NodeState.MIGRATING
-    elif isLossOfPower(vThresh=4.6):
+    elif isLossOfPower(vThresh=4.8):
         selfState["state"] = NodeState.SHUTDOWN
     else:
         selfState["state"] = NodeState.IDLE
