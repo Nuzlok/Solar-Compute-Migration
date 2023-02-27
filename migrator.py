@@ -80,6 +80,11 @@ class Process:
             return True
         return False
 
+    def run(self, command=None) -> bool:
+        """Start the process. returns True if successful"""
+        os.system("python3 /home/pi/videoboard/vidboardmain.py --bind_ip 192.168.137.3")
+        return False
+
     def restore(self, log_level="-vvvv", log_file="restore.log", shell=True, tcp=True) -> bool:
         """
         Start the received process in a new thread. return true if successful
@@ -104,6 +109,7 @@ class Process:
 
     def dump(self, log_level="-vvvv", log_file="output.log", shell=True, tcp=True) -> bool:
         """ Dump the process using CRIU. Accepts a command to run after the dump is complete. returns True if successful"""
+
         command = ['sudo', 'criu', 'dump', log_level, '-o', log_file, '-t', f'{self.pid}', '&&', 'echo', 'OK']
 
         if shell:
@@ -175,7 +181,9 @@ def getNewProcess() -> Process:
     if os.path.exists(f'{directory}/flag.txt') == False:  # dont need to look for the folder, we can check for the flag directly
         return None
     print("Flag File Found, creating process")
-    return Process("videoboard", location=directory, aliasIP=IPv4Address("192.168.137.2"))  # TODO: change the IP address to a new IP for the process
+    proc = Process("videoboard", location=directory, aliasIP=IPv4Address("192.168.137.3"))  # TODO: change the IP address to a new IP for the process
+    proc.run()
+    return proc
 
     # # received is the name of the directory that contains the process files
     # received = next(iter(os.listdir(DIRECTORY)), None) # this will return the first item in the list, or None if the list is empty
@@ -257,12 +265,12 @@ def confirmNodeAvailable(ip: IPv4Address) -> bool:
 
 def MainFSM(process: Process):
     global selfState
-    print(f"{voltage.value=:.5f}, state={selfState['state']}, Press Ctrl-C to exit")
+    print(f"{5*voltage.value=:.5f}, state={selfState['state']}, Press Ctrl-C to exit")
     time.sleep(0.05)  # make sure it doesnt hog the CPU
 
-    if isLossOfPower(vThresh=4.9) or getMigrateCMD():
+    if isLossOfPower(vThresh=4.1) or getMigrateCMD():
         selfState["state"] = NodeState.MIGRATING
-    elif isLossOfPower(vThresh=4.8):
+    elif isLossOfPower(vThresh=4.0):
         selfState["state"] = NodeState.SHUTDOWN
     else:
         selfState["state"] = NodeState.IDLE
