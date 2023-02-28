@@ -129,12 +129,12 @@ class Process:
         return True
 
 
-def isLossOfPower(vThresh=4.8, cThresh=0.5, vScale=5, cScale=1) -> bool:
+def isLossOfPower(vThresh=6.1, cThresh=0.5, vScale=10, cScale=1) -> bool:
     """ Decide when node is losing power by comparing the voltage and current to a threshold. """
 
-    vol, curr = voltage.value * vScale, current.value * cScale
+    vol, curr = voltage.value * vScale, current.value / cScale
 
-    # TODO: scale panel voltage based on resistive drop in voltage, set default threshold from that
+    #TODO: Set vTresh to expected panel threshold voltage (Currently at an estimated value 4.8 + 1.3)
 
     return vol < vThresh
 
@@ -265,7 +265,7 @@ def confirmNodeAvailable(ip: IPv4Address) -> bool:
 
 def MainFSM(process: Process):
     global selfState
-    print(f"{5*voltage.value=:.5f}, state={selfState['state']}, Press Ctrl-C to exit")
+    print(f"{(5*voltage.value) :=.5f}, state={selfState['state']}, Press Ctrl-C to exit")
     time.sleep(0.05)  # make sure it doesnt hog the CPU
 
     if isLossOfPower(vThresh=4.1) or getMigrateCMD():
