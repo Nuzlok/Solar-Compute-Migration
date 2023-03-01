@@ -82,8 +82,12 @@ class Process:
 
     def run(self, command=None) -> bool:
         """Start the process. returns True if successful"""
-        os.system("python3 /home/pi/videoboard/vidboardmain.py --bind_ip 192.168.137.3")
-        return False
+        # subprocess.check_output(['ps', 'ax']).decode()
+        print(os.system("python3 /home/pi/videoboard/vidboardmain.py --bind_ip 192.168.137.3 &") == 0)
+        result = subprocess.check_output(['ps', 'ax']).decode().split('\n')  # Get a list of all processes and find the one that is running socket_echo_client.py
+        matching_lines = [line for line in result if "vidboardmain.py" in line]           # Find the line that contains socket_echo_client.py
+        self.pid = matching_lines[0].split()[0]
+        return True
 
     def restore(self, log_level="-vvvv", log_file="restore.log", shell=True, tcp=True) -> bool:
         """
@@ -134,7 +138,7 @@ def isLossOfPower(vThresh=6.1, cThresh=0.5, vScale=10, cScale=1) -> bool:
 
     vol, curr = voltage.value * vScale, current.value / cScale
 
-    #TODO: Set vTresh to expected panel threshold voltage (Currently at an estimated value 4.8 + 1.3)
+    # TODO: Set vTresh to expected panel threshold voltage (Currently at an estimated value 4.8 + 1.3)
 
     return vol < vThresh
 
@@ -181,9 +185,7 @@ def getNewProcess() -> Process:
     if os.path.exists(f'{directory}/flag.txt') == False:  # dont need to look for the folder, we can check for the flag directly
         return None
     print("Flag File Found, creating process")
-    proc = Process("videoboard", location=directory, aliasIP=IPv4Address("192.168.137.3"))  # TODO: change the IP address to a new IP for the process
-    proc.run()
-    return proc
+    return Process("videoboard", location=directory, aliasIP=IPv4Address("192.168.137.3"))  # TODO: change the IP address to a new IP for the process
 
     # # received is the name of the directory that contains the process files
     # received = next(iter(os.listdir(DIRECTORY)), None) # this will return the first item in the list, or None if the list is empty
@@ -205,21 +207,26 @@ def checkpointAndMigrateProcessToNode(proc: Process, receivingIP: IPv4Address):
 
     if proc.dump() == False:
         raise Exception("Failed to checkpoint process, dumping failed")
-
+    print("Process dumped successfully")
     if confirmNodeAvailable(receivingIP) == False:
         raise Exception("Receiving node is not available, node did not update its state")
+    print("Receiving node is available")
 
     if IPalias(proc.aliasIP, False) == False:
         raise Exception("Failed to remove IP alias from current node, new node will not be able to run process")
+    print("IP alias removed from current node")
 
     if rsyncProcessToNode(proc, receivingIP) == False:
         raise Exception("Failed to rsync process to receiving node, process may be incomplete")
+    print("Process rsynced to receiving node")
 
     if sendFinishFlag(ip=receivingIP, path=proc.procName) == False:
         raise Exception("Failed to send finish flag to receiving node, process may be incomplete")
+    print("Finish flag sent to receiving node")
 
     if proc.deleteFromDisk() == False:
         raise Exception("Failed to delete process from disk, process might accidentally be run again")
+    print("Process deleted from disk")
 
 
 def rsyncProcessToNode(proc: Process, ip: IPv4Address, password="pi", username="pi"):
@@ -272,25 +279,28 @@ def MainFSM(process: Process):
         selfState["state"] = NodeState.MIGRATING
     elif isLossOfPower(vThresh=4.0):
         selfState["state"] = NodeState.SHUTDOWN
-    else:
-        selfState["state"] = NodeState.IDLE
+    # else:
+        # selfState["state"] = NodeState.IDLE
 
     if selfState["state"] == NodeState.IDLE:
         process = getNewProcess()
-        if process is not None:
-            if process.restore() == False:
-                raise RuntimeError("Failed to start process thread. Process not started.")
+        if process:
+            process.run()
             selfState["state"] = NodeState.BUSY
+            print("process started")
+        #    # if process.restore() == False:
+        #    #     raise RuntimeError("Failed to start process thread. Process not started.")
 
     if selfState["state"] == NodeState.BUSY:
-        if process.procState == ProcessState.FINISHED:
+        if process.procState == ProcessState.COMPLETED:
             # sendProcessResultsToUser() # TODO: if we want to send the results back to the user, we can do that here
             selfState["state"] = NodeState.IDLE
 
     if selfState["state"] == NodeState.MIGRATING:
+        print("migrating")
         # checkpointAndMigrateProcessToNode(process, findAvailableNode())
-        # checkpointAndMigrateProcessToNode(process, IPv4Address("192.168.137.140"))
-        checkpointAndMigrateProcessToNode(process)
+        checkpointAndMigrateProcessToNode(process, IPv4Address("192.168.137.140"))
+        # checkpointAndMigrateProcessToNode(process)
         selfState["state"] = NodeState.IDLE
 
 
