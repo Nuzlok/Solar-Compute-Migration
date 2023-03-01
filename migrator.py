@@ -55,7 +55,6 @@ class Process:
     """
 
     def __init__(self, name: str, location=None, aliasIP=None):
-        print("TODO: Process __init__ not implemented yet.")
         self.procState = ProcessState.NONE
         self.procName = name
         self.location = location
@@ -82,12 +81,11 @@ class Process:
 
     def run(self, command=None) -> bool:
         """Start the process. returns True if successful"""
-        # subprocess.check_output(['ps', 'ax']).decode()
-        print(os.system("python3 /home/pi/videoboard/vidboardmain.py --bind_ip 192.168.137.3 &") == 0)
-        result = subprocess.check_output(['ps', 'ax']).decode().split('\n')  # Get a list of all processes and find the one that is running socket_echo_client.py
-        matching_lines = [line for line in result if "vidboardmain.py" in line]           # Find the line that contains socket_echo_client.py
-        self.pid = matching_lines[0].split()[0]
-        return True
+        os.system("python3 /home/pi/videoboard/vidboardmain.py --bind_ip 192.168.137.3 &")
+        time.sleep(2)  # Wait for the process to start before getting the PID
+        self.pid = subprocess.check_output(['pgrep', '-f', 'vidboardmain.py']).decode().strip()  # Get the PID of the process
+        print(f"Starting process: {self.procName} in folder {self.location} on {self.aliasIP} with PID {self.pid}")
+        return self.pid != ""
 
     def restore(self, log_level="-vvvv", log_file="restore.log", shell=True, tcp=True) -> bool:
         """
@@ -114,16 +112,19 @@ class Process:
     def dump(self, log_level="-vvvv", log_file="output.log", shell=True, tcp=True) -> bool:
         """ Dump the process using CRIU. Accepts a command to run after the dump is complete. returns True if successful"""
 
-        command = ['sudo', 'criu', 'dump', log_level, '-o', log_file, '-t', f'{self.pid}', '&&', 'echo', 'OK']
+        print(f"Dumping process: {self.procName} in folder {self.location} on {self.aliasIP} with PID {self.pid}")
+        command = ['sudo', 'criu', 'dump', log_level, '-o', log_file, '-t', f'{self.pid}']
 
         if shell:
             command.insert(8, '--shell-job')
         if tcp:
             command.insert(8, '--tcp-established')
 
-        result = subprocess.check_output(command).decode()
-        if result != "OK":
-            raise Exception(f"CRIU Dump Result: '{result}', Expected: OK")
+        try:
+            output = None
+            output = subprocess.check_output(command).decode()
+        except subprocess.CalledProcessError as e:
+            print(output)
         self.procState = ProcessState.DUMPED
         return True
 
@@ -208,25 +209,25 @@ def checkpointAndMigrateProcessToNode(proc: Process, receivingIP: IPv4Address):
     if proc.dump() == False:
         raise Exception("Failed to checkpoint process, dumping failed")
     print("Process dumped successfully")
-    if confirmNodeAvailable(receivingIP) == False:
-        raise Exception("Receiving node is not available, node did not update its state")
-    print("Receiving node is available")
+    # if confirmNodeAvailable(receivingIP) == False:
+    #     raise Exception("Receiving node is not available, node did not update its state")
+    # print("Receiving node is available")
 
     if IPalias(proc.aliasIP, False) == False:
         raise Exception("Failed to remove IP alias from current node, new node will not be able to run process")
     print("IP alias removed from current node")
 
-    if rsyncProcessToNode(proc, receivingIP) == False:
-        raise Exception("Failed to rsync process to receiving node, process may be incomplete")
-    print("Process rsynced to receiving node")
+    # if rsyncProcessToNode(proc, receivingIP) == False:
+    #     raise Exception("Failed to rsync process to receiving node, process may be incomplete")
+    # print("Process rsynced to receiving node")
 
-    if sendFinishFlag(ip=receivingIP, path=proc.procName) == False:
-        raise Exception("Failed to send finish flag to receiving node, process may be incomplete")
-    print("Finish flag sent to receiving node")
+    # if sendFinishFlag(ip=receivingIP, path=proc.procName) == False:
+    #     raise Exception("Failed to send finish flag to receiving node, process may be incomplete")
+    # print("Finish flag sent to receiving node")
 
-    if proc.deleteFromDisk() == False:
-        raise Exception("Failed to delete process from disk, process might accidentally be run again")
-    print("Process deleted from disk")
+    # if proc.deleteFromDisk() == False:
+    #     raise Exception("Failed to delete process from disk, process might accidentally be run again")
+    # print("Process deleted from disk")
 
 
 def rsyncProcessToNode(proc: Process, ip: IPv4Address, password="pi", username="pi"):
@@ -279,17 +280,17 @@ def MainFSM(process: Process):
         selfState["state"] = NodeState.MIGRATING
     elif isLossOfPower(vThresh=4.0):
         selfState["state"] = NodeState.SHUTDOWN
-    # else:
-        # selfState["state"] = NodeState.IDLE
 
     if selfState["state"] == NodeState.IDLE:
         process = getNewProcess()
         if process:
-            process.run()
+            IPalias(process.aliasIP, True)
+            if process.run() == False:
+                raise RuntimeError("Failed to start process thread. Process not started.")
             selfState["state"] = NodeState.BUSY
             print("process started")
-        #    # if process.restore() == False:
-        #    #     raise RuntimeError("Failed to start process thread. Process not started.")
+        #   if process.restore() == False:
+        #       raise RuntimeError("Failed to start process thread. Process not started.")
 
     if selfState["state"] == NodeState.BUSY:
         if process.procState == ProcessState.COMPLETED:
@@ -301,7 +302,13 @@ def MainFSM(process: Process):
         # checkpointAndMigrateProcessToNode(process, findAvailableNode())
         checkpointAndMigrateProcessToNode(process, IPv4Address("192.168.137.140"))
         # checkpointAndMigrateProcessToNode(process)
-        selfState["state"] = NodeState.IDLE
+        # selfState["state"] = NodeState.IDLE
+        selfState["state"] = NodeState.SHUTDOWN
+
+    if selfState["state"] == NodeState.SHUTDOWN:
+        raise KeyboardInterrupt("Shutdown command received")
+
+    return process
 
 
 def main():
@@ -319,7 +326,7 @@ def main():
         print(f"reading voltage from pin 2")
         print(f"reading current from pin 0 and 1")
         while True:
-            MainFSM(process)  # Main FSM
+            process = MainFSM(process)  # Main FSM
     except (KeyboardInterrupt, Exception) as e:
         broadcaster.stop()
         broadcaster.join()
@@ -390,4 +397,5 @@ class BroadcastReceiver(threading.Thread):
 
 
 if __name__ == '__main__':  # if we are running in the main context
-    main()  # run the main function. python is weird and this is how you do it
+    # run the main function. python is weird and this is how you do it
+    main()
