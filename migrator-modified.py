@@ -119,7 +119,7 @@ class Process:
 
     def dump(self, log_level="-vvvv", log_file="output.log", shell=True, tcp=True) -> bool:
         """ Dump the process using CRIU. Accepts a command to run after the dump is complete. returns True if successful"""
-        os.system("rm core* fs* ids* invent** mm-* pagemap* pages* pstree* seccomp* stats* tcp* timens* tty* files* fdinfo*")
+        os.system("rm core* fs* ids* invent* mm-* pagemap* pages* pstree* seccomp* stats* tcp* timens* tty* files* fdinfo*")
         print(f"Dumping process: {self.procName} in folder {self.location} on {self.aliasIP} with PID {self.pid}")
         # command = ['sudo', 'criu', 'dump', log_level, '-o', log_file, '-t', f'{self.pid}']
 
@@ -146,7 +146,7 @@ class Process:
         print(pid)
         os.system(f"cd /home/pi/videoboard")
         os.chdir('/home/pi/videoboard')
-        os.system(f"sudo criu dump -vvvv -o dump.log -t {pid} --tcp-established --ghost-limit 100000000 && echo OK")
+        os.system(f"sudo criu dump -vvvv -o dump.log -t {pid} --shell-job --tcp-established --ghost-limit 100000000 && echo OK")
         time.sleep(0.1)
         os.system(f"cd /home/pi")
         os.chdir('/home/pi')
