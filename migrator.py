@@ -8,7 +8,7 @@ import threading
 import time
 from enum import Enum, auto
 from ipaddress import IPv4Address
-
+import netifaces
 import pexpect
 
 try:
@@ -43,7 +43,7 @@ class ProcessState(Enum):
         return self.name
 
 
-selfState = {"ip": "", "status": "online", "state": NodeState.IDLE, "current": 0, "voltage": 0, "manual": False, "migrate_cmd": False, "reboot_cmd": False, "shutdown_cmd": False, aliasList: None}
+selfState = {"ip": "", "status": "online", "state": NodeState.IDLE, "current": 0, "voltage": 0, "manual": False, "migrate_cmd": False, "reboot_cmd": False, "shutdown_cmd": False}
 uniqueOtherNodeStatuses = {}  # set of unique statuses from other nodes (all nodes except this one). indexed by IP address
 DIRECTORY = "/home/pi/ReceivedProcesses/"  # directory to store processes that are received from other nodes
 
@@ -306,6 +306,8 @@ def findAvailableNode() -> IPv4Address:
 
     # TODO: Possible comparison for other factors like time, weather, etc.. here. For now, just return the first available node
 
+    print(f"Available nodes: {available}")
+
     return available[0] if len(available) > 0 else None
 
 
@@ -359,7 +361,7 @@ def main():
     global voltage, current, selfState
 
     # get the ip address of the current host and store it in the selfState dictionary
-    selfState["ip"] = socket.gethostbyname(socket.gethostname())
+    selfState["ip"] = netifaces.ifaddresses('eth0')[2][0]['addr']
 
     try:
         broadcaster = BroadcastSender()  # Start broadcast sender and receiver threads
