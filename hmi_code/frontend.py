@@ -92,7 +92,8 @@ class asyncWorker(QThread):
 
                 if CURRENTLY_SELECTED in PACKET['ip']:  # TODO: Fix this if statement (if the packet is from the currently selected node). This is a hacky way to do it
                     mWindow.nodeSelector.address.setText(PACKET['ip'])
-                    mWindow.powerWidget.power.setText(f"{PACKET['current']*PACKET['voltage']} W")
+                    vol, cur = float(PACKET['voltage']), float(PACKET['current'])
+                    mWindow.powerWidget.power.setText(f"{(5*vol):=.2f} V  *  {cur:=.2f} A  =  {(5*vol*cur) := .2f} W")
                     mWindow.stateText.setText(str(PACKET['state']))
                     if DEBUG:
                         print(f"State for Node {CURRENTLY_SELECTED} is {PACKET}")

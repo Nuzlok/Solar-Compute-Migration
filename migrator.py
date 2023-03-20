@@ -80,18 +80,19 @@ class Process:
 
     def start(self) -> bool:
         """ Check if the process is a new process or a dumped process. If it is a new process, run it. If it is a dumped process, restore it. """
-        if os.path.exists(f"{self.location}/dump.log"):
-            # print("restoring process")
+        if os.path.exists(f"/home/pi/cpflag.txt"):
+            print("restoring process")
+            os.system("sudo rm -rf /home/pi/cpflag.txt")
             return self.restore()
         else:
-            # print("running new process")
+            print("running new process")
+            os.system("sudo rm /home/pi/startflag.txt")
             return self.run()
 
     def run(self, command=None) -> bool:
         """Start a new process. returns True if successful"""
         os.chdir('/home/pi/videoboard')
         os.system("setsid nohup sudo python3 /home/pi/videoboard/vidboardmain.py --bind_ip 192.168.137.3 </dev/null &>/dev/null &")
-        os.system("disown")
         time.sleep(2)  # Wait for the process to start before getting the PID
         self.pid = subprocess.check_output(['pgrep', '-f', 'vidboardmain.py']).decode().strip()  # Get the PID of the process
         print(f"Starting {self}")
@@ -108,19 +109,18 @@ class Process:
     def restore(self, log_level="-vvvv", log_file="restore.log", shell=True, tcp=True) -> bool:
         """ Start an existing dumped process. return True if successful. """
 
-        IPalias(f"{self.aliasIP}", True)
-        os.chdir(f'{self.location}')
-        os.system(f"cd {self.location}")
-        command = f"unshare -p -m --fork --mount-proc criu restore {log_level} -o {log_file}"
-
-        command += " --shell-job" if shell else ""
-        command += " --tcp-established" if tcp else ""
+        IPalias(f"192.168.137.3", True)
+        os.chdir('/home/pi/videoboard')
+        command = f"setsid nohup sudo criu restore -vvvv -o restore.log --shell-job --tcp-established &"
         if not os.system(command) == 0:  # 0 means success
             return False
 
-        result = subprocess.run(['ps', 'ax'], stdout=subprocess.PIPE).stdout
-        result = subprocess.run(['grep', 'vidboardmain.py'], input=result, stdout=subprocess.PIPE).stdout.decode().split()[0]  # TODO: use the arbitrary process name instead of hardcoding it
-        self.pid = result
+        # time.sleep(10)
+        # result = subprocess.run(['ps', 'ax'], stdout=subprocess.PIPE).stdout
+        # result = subprocess.run(['grep', 'vidboardmain.py'], input=result, stdout=subprocess.PIPE).stdout.decode().split()[0]  # TODO: use the arbitrary process name instead of hardcoding it
+        # self.pid = result
+        self.procState = ProcessState.RUNNING
+        return True
 
         if self.pid != "":  # If the PID is not empty
             print(f"Restoring {self}")  # self has a __str__ method that prints the process name and PID
@@ -130,7 +130,8 @@ class Process:
 
     def dump(self, log_level="-vvvv", log_file="output.log", shell=True, tcp=True) -> bool:
         """ Dump the process using CRIU. Accepts a command to run after the dump is complete. returns True if successful. """
-        os.system("rm -rf core* fs* ids* invent* mm-* pagemap* pages* pstree* seccomp* stats* tcp* timens* tty* files* fdinfo*")
+        os.chdir('/home/pi/videoboard')
+        os.system("rm -rf core* fs* ids* invent* mm-* pagemap* pages* pstree* seccomp* stats* tcp* timens* tty* files* fdinfo* nohup.out dump.log restore.log flag.txt")
         print(f"Dumping {self}")
 
         # command = ['sudo', 'dump', log_level, '-o', log_file, '-t', f'{self.pid}']
@@ -146,8 +147,9 @@ class Process:
         self.pid = matching_lines[-1].split()[0]
         print(f'{self.pid=}')
         os.chdir('/home/pi/videoboard')
-        os.system(f"sudo criu dump -vvvv -o dump.log -t {self.pid} --shell-job --tcp-established --ghost-limit 100q000000 && echo OK")
+        os.system(f"sudo criu dump -vvvv -o dump.log -t {self.pid} --shell-job --tcp-established --ghost-limit 100000000 && echo OK")
         time.sleep(0.1)
+        os.system("sudo rm -rf cpflag.txt videoboard/cpflag.txt /home/pi/cpflag.txt startflag.txt videoboard/startflag.txt /home/pi/startflag.txt")
         os.chdir('/home/pi')
         self.procState = ProcessState.DUMPED
         return True
@@ -196,13 +198,16 @@ def sendFinishFlag(path: str, ip: IPv4Address, username="pi", password="pi") -> 
     without this flag, the destination node will not know if an error occurred during the transfer.
     """
 
-    ssh_cmd = f'sudo scp /home/pi/flag.txt {username}@{ip}:{path}/'
-    child = pexpect.spawn(ssh_cmd, timeout=30)  # spawnu for Python 3
-    child.expect([f'{username}@{ip}\'s password: '])
+    os.system("touch /home/pi/cpflag.txt")
+    ssh_cmd = f'sudo scp /home/pi/cpflag.txt {username}@{ip}:/home/pi/'
+    print(f"{ssh_cmd=}")
+    child = pexpect.spawn(ssh_cmd, timeout=30)
+    child.expect([f"{username}@{ip}'s password: "])
     child.sendline(f'{password}')
     child.expect(pexpect.EOF)
     child.close()
-    return child.exitstatus
+    os.system("sudo rm -rf /home/pi/cpflag.txt /home/pi/startflag.txt")
+    return child.exitstatus == 0
 
 
 def getNewProcess() -> Process:
@@ -214,7 +219,7 @@ def getNewProcess() -> Process:
 
     directory = "/home/pi/videoboard"  # TODO: change this to the directory that the process files are stored in using the commented out code below
 
-    if os.path.exists(f'{directory}/flag.txt') == False:  # dont need to look for the folder, we can check for the flag directly
+    if os.path.exists(f'/home/pi/startflag.txt') == False and os.path.exists(f'/home/pi/cpflag.txt') == False:  # dont need to look for the folder, we can check for the flag directly
         return None
     print("Flag File Found, creating process")
     return Process("videoboard", location=directory, aliasIP=IPv4Address("192.168.137.3"))  # TODO: change the IP address to a new IP for the process
@@ -237,44 +242,42 @@ def checkpointAndMigrateProcessToNode(proc: Process, receivingIP: IPv4Address):
     6. Delete process and supporting files on current node
     """
 
-    print("Beginning checkpoint and migration process")
-
     if proc.dump() == False:
         raise Exception("Failed to checkpoint process, dumping failed")
     print("Process dumped successfully")
 
     # if confirmNodeAvailable(receivingIP) == False:
-    #     raise Exception("Receiving node is not available, node did not update its state")
-    # print("Receiving node is available")
+    #     raise Exception("Receiving node is not responding/available")
+    # print(f"Confirmed node at {receivingIP} is available")
 
     if IPalias(proc.aliasIP, False) == False:
         raise Exception("Failed to remove IP alias from current node, new node will not be able to run process")
     print("IP alias removed from current node")
 
-    # if rsyncProcessToNode(proc, receivingIP) == False:
-    #     raise Exception("Failed to rsync process to receiving node, process may be incomplete")
-    # print("Process rsynced to receiving node")
+    if rsyncProcessToNode(proc, receivingIP) == False:
+        raise Exception("Failed to rsync process to receiving node, process may be incomplete")
+    print("Process rsynced to receiving node")
 
-    # if sendFinishFlag(ip=receivingIP, path=proc.procName) == False:
-    #     raise Exception("Failed to send finish flag to receiving node, process may be incomplete")
-    # print("Finish flag sent to receiving node")
+    if sendFinishFlag(ip=receivingIP, path=proc.procName) == False:
+        raise Exception("Failed to send finish flag to receiving node, process may be incomplete")
+    print("Finish flag sent to receiving node")
 
-    # if proc.deleteFromDisk() == False:
-    #     raise Exception("Failed to delete process from disk, process might accidentally be run again")
-    # print("Process deleted from disk")
+    if proc.deleteFromDisk() == False:
+        raise Exception("Failed to delete process from disk, process might accidentally be run again")
+    print("Process deleted from disk")
 
 
 def rsyncProcessToNode(proc: Process, ip: IPv4Address, password="pi", username="pi"):
     """rsync dumped files to receiving node"""
     # spawn rsync -avz /home/pi/{proc.getDirectory()} pi@{ip}:{DIRECTORY}
 
-    ssh_cmd = f'sudo scp -r /home/pi/{proc.getDirectory()} {username}@{ip}:/home/pi/'
+    ssh_cmd = f'sudo scp -r /home/pi/videoboard {username}@{ip}:/home/pi/'
     child = pexpect.spawn(ssh_cmd, timeout=30)
-    child.expect([f'{username}@{ip}\'s password: '])
+    child.expect([f"{username}@{ip}'s password: "])
     child.sendline(f'{password}')
     child.expect(pexpect.EOF)
     child.close()
-    return child.exitstatus
+    return child.exitstatus == 0
 
 # def IPalias(address: IPv4Address, add: bool) -> bool:
 #     """Handle IP alias to current node. set add to true to add alias, and vice versa"""
@@ -300,14 +303,11 @@ def IPalias(address: IPv4Address, add: bool) -> bool:
 def findAvailableNode() -> IPv4Address:
     """Find an available node to migrate to"""
     available = []
-    for ip, (packet, _) in uniqueOtherNodeStatuses:  # TODO: Check if this is the correct syntax
+    for packet, time in uniqueOtherNodeStatuses.values():
         if packet["state"] == NodeState.IDLE:  # found an available node
-            available.append(ip)
+            available.append(packet["ip"])
 
     # TODO: Possible comparison for other factors like time, weather, etc.. here. For now, just return the first available node
-
-    print(f"Available nodes: {available}")
-
     return available[0] if len(available) > 0 else None
 
 
@@ -348,11 +348,12 @@ def MainFSM(process: Process):
             selfState["state"] = NodeState.IDLE
 
     if selfState["state"] == NodeState.MIGRATING:
-        checkpointAndMigrateProcessToNode(process, IPv4Address("192.168.137.140"))  # TODO: remove hardcoded IP and replace with findAvailableNode()
+        checkpointAndMigrateProcessToNode(process, IPv4Address(findAvailableNode()))
         selfState["state"] = NodeState.SHUTDOWN
 
     if selfState["state"] == NodeState.SHUTDOWN:
-        raise Exception("Shutdown command received")
+        # raise Exception("Shutdown command received")
+        selfState["state"] = NodeState.IDLE
 
     return process
 
@@ -364,14 +365,14 @@ def main():
     selfState["ip"] = netifaces.ifaddresses('eth0')[2][0]['addr']
 
     try:
+        # https://gpiozero.readthedocs.io/en/stable/api_input.html#mcp3008
+        voltage = MCP3008(channel=2, differential=False, max_voltage=5)  # single ended on channel 2
+        current = MCP3008(channel=1, differential=True, max_voltage=5)  # differential on channel 1 and 0, might need to change to pin 0 if output is inverted
         broadcaster = BroadcastSender()  # Start broadcast sender and receiver threads
         broadcaster.start()
         receiver = BroadcastReceiver()
         receiver.start()
         process = None
-        # https://gpiozero.readthedocs.io/en/stable/api_input.html#mcp3008
-        voltage = MCP3008(channel=2, differential=False, max_voltage=5)  # single ended on channel 2
-        current = MCP3008(channel=1, differential=True, max_voltage=5)  # differential on channel 1 and 0, might need to change to pin 0 if output is inverted
         print(f"reading voltage from pin 2, current from pin 0-1")
         while True:
             process = MainFSM(process)  # Main FSM
@@ -407,6 +408,8 @@ class BroadcastSender(threading.Thread):
         while self._running:
             # ran = random.randrange(139, 143, 1)
             # selfState["ip"] = f"192.168.137.{ran}"  # this is temporary for testing. will be replaced with actual ip when we have a network-------------
+            selfState["voltage"] = voltage.value
+            selfState["current"] = current.value
             self.socket.sendto(pickle.dumps(selfState), (self.baddress, self.port))
             time.sleep(self.send_delay)
             # print(f"broadcasting state {selfState['ip']}")
@@ -439,8 +442,8 @@ class BroadcastReceiver(threading.Thread):
             try:
                 packet = pickle.loads(self.sock.recvfrom(self.sockSize)[0])
                 if packet["ip"] != selfState["ip"]:                              # If the packet is not from this node
-                    uniqueOtherNodeStatuses[packet["ip"]] = packet, time.time()
-            except socket.timeout:
+                    uniqueOtherNodeStatuses[packet["ip"]] = (packet, time.time())
+            except socket.timeout:  # TODO: This timout does not work since the socket will receive its own broadcast packets
                 if self.timeout_reset_counter-1 == 0:
                     uniqueOtherNodeStatuses = {}      # If we don't receive anything within a period, clear
                     self.timeout_reset_counter = 8
