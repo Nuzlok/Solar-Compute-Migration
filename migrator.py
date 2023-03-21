@@ -266,6 +266,9 @@ def checkpointAndMigrateProcessToNode(proc: Process, receivingIP: IPv4Address):
         raise Exception("Failed to delete process from disk, process might accidentally be run again")
     print("Process deleted from disk")
 
+    proc = None  # remove the process from memory after it has been migrated
+    return True
+
 
 def rsyncProcessToNode(proc: Process, ip: IPv4Address, password="pi", username="pi"):
     """rsync dumped files to receiving node"""
@@ -326,10 +329,11 @@ def MainFSM(process: Process):
     time.sleep(0.05)  # make sure it doesnt hog the CPU
 
     # ------------------ Change State ------------------
-    if isLossOfPower(vThresh=4.1) or getMigrateCMD():
-        selfState["state"] = NodeState.MIGRATING
-    elif isLossOfPower(vThresh=4.0):
-        selfState["state"] = NodeState.SHUTDOWN
+    if selfState["state"] != NodeState.SHUTDOWN:
+        if isLossOfPower(vThresh=4.1) or getMigrateCMD():
+            selfState["state"] = NodeState.MIGRATING
+        elif isLossOfPower(vThresh=4.0):
+            selfState["state"] = NodeState.SHUTDOWN
 
     # ------------------ Execute State ------------------
     if selfState["state"] == NodeState.IDLE:
@@ -353,7 +357,7 @@ def MainFSM(process: Process):
 
     if selfState["state"] == NodeState.SHUTDOWN:
         # raise Exception("Shutdown command received")
-        selfState["state"] = NodeState.IDLE
+        pass
 
     return process
 
