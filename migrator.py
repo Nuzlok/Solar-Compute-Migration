@@ -143,14 +143,12 @@ class Process:
         result = subprocess.run(['ps', 'ax'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         lines = result.stdout.decode().split('\n')  # TODO: use the arbitrary process name instead of hardcoding it, also use grep instead of this (try os.popen('ps ax | grep {process_name}'))
         matching_lines = [line for line in lines if "vidboardmain.py" in line]
-        print(f'{matching_lines=}')
         self.pid = matching_lines[-1].split()[0]
-        print(f'{self.pid=}')
         os.chdir('/home/pi/videoboard')
         os.system(f"sudo criu dump -vvvv -o dump.log -t {self.pid} --shell-job --tcp-established --ghost-limit 100000000 && echo OK")
         time.sleep(0.1)
-        os.system("sudo rm -rf cpflag.txt videoboard/cpflag.txt /home/pi/cpflag.txt startflag.txt videoboard/startflag.txt /home/pi/startflag.txt")
         os.chdir('/home/pi')
+        os.system("sudo rm -rf cpflag.txt videoboard/cpflag.txt /home/pi/cpflag.txt startflag.txt videoboard/startflag.txt /home/pi/startflag.txt")
         self.procState = ProcessState.DUMPED
         return True
 
