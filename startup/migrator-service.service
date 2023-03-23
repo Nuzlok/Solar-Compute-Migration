@@ -1,0 +1,14 @@
+[Unit]
+Description=Start the Migrator Service at boot time
+After=network.target 
+
+[Service]
+ExecStart=/usr/bin/python3 /home/pi/migrator.py
+Restart=no
+User=root
+StandardOutput=journal
+StandardError=journal
+
+
+[Install]
+WantedBy=multi-user.target
