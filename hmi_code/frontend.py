@@ -4,6 +4,7 @@ import sys
 import time
 from enum import Enum, auto
 from ipaddress import IPv4Address
+import wexpect
 
 from customWidgets import *
 from PySide6.QtCore import *
@@ -102,6 +103,7 @@ class asyncWorker(QThread):
             except Exception as e:
                 print(e)
                 pass
+        sock.close()
 
 
 class PowerWidget(QWidget):
@@ -268,6 +270,12 @@ class ManualButtonsWidget(QWidget):
         self.layout.addWidget(self.saveProcBut, 1, 0)
         self.layout.addWidget(self.shutdownBut, 1, 1)
 
+        # set the button actions
+        self.transferBut.clicked.connect(lambda: self.migrate(f"192.168.137.{CURRENTLY_SELECTED}"))
+        self.takeNewPBut.clicked.connect(lambda: self.takeNew(f"192.168.137.{CURRENTLY_SELECTED}"))
+        self.saveProcBut.clicked.connect(lambda: self.saveProc(f"192.168.137.{CURRENTLY_SELECTED}"))
+        self.shutdownBut.clicked.connect(lambda: self.shutdown(f"192.168.137.{CURRENTLY_SELECTED}"))
+
         # Set the spacing property of the layout to add space between the buttons
         self.layout.setSpacing(10)
         self.setLayout(self.layout)
@@ -283,6 +291,33 @@ class ManualButtonsWidget(QWidget):
     def setEnabled(self, state):
         for button in self.buttonsGroup:
             button.setEnabled(state)
+
+    def migrate(self, selected_ip, user="pi", password="pi"):
+        self.command(f'touch /home/{user}/force_migrate.txt', selected_ip, user, password)
+
+    def takeNew(self, selected_ip, user="pi", password="pi"):
+        self.command(f'touch /home/{user}/force_take_new_process.txt', selected_ip, user, password)
+
+    def saveProc(self, selected_ip, user="pi", password="pi"):
+        self.command(f'touch /home/{user}/force_dump.txt', selected_ip, user, password)
+
+    def shutdown(self, selected_ip, user="pi", password="pi"):
+        command = 'sudo -S shutdown now'
+        print(f"ssh {user}@{selected_ip} '{command}'")
+        child = wexpect.spawn(f"ssh {user}@{selected_ip} {command}", timeout=30)
+        child.expect([f"{user}@{selected_ip}'s password:"], timeout=5)
+        child.sendline(password)
+        child.expect([f"\[sudo\] password for {user}:"], timeout=5)
+        child.sendline(password)
+
+        # child.expect(wexpect.EOF)
+
+    def command(self, command, selected_ip, user, password):
+        print(f"ssh {user}@{selected_ip} '{command}'")
+        child = wexpect.spawn(f"ssh {user}@{selected_ip} '{command}'", timeout=30)
+        child.expect([f"{user}@{selected_ip}'s password:"])
+        child.sendline(password)
+        child.expect(wexpect.EOF)
 
 
 if __name__ == '__main__':
