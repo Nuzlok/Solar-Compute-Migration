@@ -11,14 +11,9 @@ from ipaddress import IPv4Address
 import netifaces
 import pexpect
 from statistics import mean
-
-try:
-    import RPi.GPIO  # ensure pin factory is set to RPi.GPIO
-    import spidev  # only for gpio pins on raspberry pi
-    from gpiozero import MCP3008
-except ImportError as e:
-    print("Make sure gpiozero, spidev, and RPi.GPIO are installed")
-    raise Exception("Make sure gpiozero, spidev, and RPi.GPIO are installed")
+import RPi.GPIO  # ensure pin factory is set to RPi.GPIO
+import spidev  # only for gpio pins on raspberry pi
+from gpiozero import MCP3008
 
 
 class NodeState(Enum):
@@ -51,6 +46,7 @@ ADC_Values = [tuple(0, 0),] * 5  # Store ADC values to smooth  using a moving av
 
 
 class Process:
+    # TODO: convert to a dataclass instead of a normal class. This will make the code more readable and easier to use
     """
     Contains all the information about a process and provides functions to start, stop, and terminate the process.
     """
@@ -169,6 +165,8 @@ class Process:
 def isLossOfPower(vThresh=12, vScale=55, cScale=1) -> bool:
     """ Decide when node is losing power by comparing the voltage and current to a threshold. """
     # get the rolling average of the last 5 values
+    if not useADC:
+        return False
     ADC_Values.append((voltage.value * vScale, current.value / cScale))
     ADC_Values.pop(0)
     vol, curr = mean([x[0] for x in ADC_Values]), mean([x[1] for x in ADC_Values])
@@ -269,10 +267,12 @@ def checkpointAndMigrateProcessToNode(proc: Process, receivingIP: IPv4Address):
     print("Finish flag sent to receiving node")
     flag_time_ms = int(time.time()*1000)
 
-    if proc.deleteFromDisk() == False:
+    if proc.deleteFromDisk() == False:  
         raise Exception("Failed to delete process from disk, process might accidentally be run again")
     print("Process deleted from disk")
     delete_time_ms = int(time.time()*1000)
+
+    bar_width = 50
 
     total_time_ms = delete_time_ms-start_time_ms
     with open("/home/pi/migrate_stats.txt", "w") as f:
@@ -283,8 +283,6 @@ def checkpointAndMigrateProcessToNode(proc: Process, receivingIP: IPv4Address):
         f.write(f"{'Rsyncing':<15} {rsync_time_ms-alias_time_ms:2.0f} ms {'-'*int((rsync_time_ms-alias_time_ms)/total_time_ms*bar_width)}")
         f.write(f"{'Finish flag':<15} {flag_time_ms-rsync_time_ms:2.0f} ms {'-'*int((flag_time_ms-rsync_time_ms)/total_time_ms*bar_width)}")
         f.write(f"{'Deleting':<15} {delete_time_ms-flag_time_ms:2.0f} ms {'-'*int((delete_time_ms-flag_time_ms)/total_time_ms*bar_width)}")
-
-
 
     proc = None  # remove the process from memory after it has been migrated
     return True
@@ -332,7 +330,9 @@ def findAvailableNode() -> IPv4Address:
             available.append(packet["ip"])
 
     # TODO: Possible comparison for other factors like time, weather, etc.. here. For now, just return the first available node
-    return available[0] if len(available) > 0 else None
+    if len(available) > 0:
+        return available[0]
+    return None
 
 
 def confirmNodeAvailable(ip: IPv4Address) -> bool:
@@ -346,8 +346,11 @@ def confirmNodeAvailable(ip: IPv4Address) -> bool:
 
 def MainFSM(process: Process):
     global selfState
-    print(f"{(55*voltage.value) :=.5f}, state={selfState['state']}, Press Ctrl-C to exit")
     time.sleep(0.05)  # make sure it doesnt hog the CPU
+
+    if useADC: 
+        print(f"{(55*voltage.value) :=.5f}, state={selfState['state']}, Press Ctrl-C to exit")
+    
 
     # TODO: improve the logic here, it is a bit messy. maybe use draw a state diagram to help visualize it
 
@@ -375,7 +378,8 @@ def MainFSM(process: Process):
             selfState["state"] = NodeState.IDLE
 
     if selfState["state"] == NodeState.MIGRATING:
-        checkpointAndMigrateProcessToNode(process, IPv4Address(findAvailableNode()))
+        if found_ip := findAvailableNode():
+            checkpointAndMigrateProcessToNode(process, found_ip)
         selfState["state"] = NodeState.SHUTDOWN
 
     if selfState["state"] == NodeState.SHUTDOWN:
@@ -482,4 +486,10 @@ class BroadcastReceiver(threading.Thread):
 
 
 if __name__ == '__main__':  # if we are running in the main context
+    global useADC
+    useADC = True
+    if 'noadc' in sys.argv:
+        print("ADC disabled")
+        useADC = False
+        voltage, current = None, None
     main()

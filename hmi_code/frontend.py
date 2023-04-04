@@ -30,9 +30,10 @@ class MainWindow(QMainWindow):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.setFixedSize(600, 300)
-        self.setWindowTitle("Migration Assistant")
+        self.setWindowTitle("Solar Node Monitor")
+        self.setWindowIcon(QIcon('solar.jpg'))
 
-        self.title_label = QLabel("Migration Assistant", parent=self)
+        self.title_label = QLabel("Solar Node Monitor", parent=self)
         self.title_label.setAlignment(Qt.AlignCenter)
         self.title_label.setStyleSheet("font-size: 40px; font-weight: bold;")
         self.powerWidget = PowerWidget(parent=self)
