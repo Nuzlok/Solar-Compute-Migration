@@ -297,7 +297,7 @@ class ManualButtonsWidget(QWidget):
         self.command(f'touch /home/{user}/force_migrate.txt', selected_ip, user, password)
 
     def takeNew(self, selected_ip, user="pi", password="pi"):
-        self.command(f'touch /home/{user}/force_take_new_process.txt', selected_ip, user, password)
+        self.command(f'touch /home/{user}/startflag.txt', selected_ip, user, password)
 
     def saveProc(self, selected_ip, user="pi", password="pi"):
         self.command(f'touch /home/{user}/force_dump.txt', selected_ip, user, password)

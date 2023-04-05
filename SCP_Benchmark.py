@@ -3,6 +3,7 @@ import RPi.GPIO  # ensure pin factory is set to RPi.GPIO
 import spidev  # only for gpio pins on raspberry pi
 from gpiozero import MCP3008
 from time import sleep
+import os
 
 voltage = MCP3008(channel=2)
 

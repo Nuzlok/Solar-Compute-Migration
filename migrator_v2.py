@@ -9,6 +9,7 @@ import time
 from enum import Enum, auto
 from ipaddress import IPv4Address
 import netifaces
+from numpy import delete
 import pexpect
 from statistics import mean
 import RPi.GPIO  # ensure pin factory is set to RPi.GPIO
@@ -42,7 +43,7 @@ class ProcessState(Enum):
 selfState = {"ip": "", "status": "online", "state": NodeState.IDLE, "current": 0, "voltage": 0, "manual": False, "migrate_cmd": False, "reboot_cmd": False, "shutdown_cmd": False}
 uniqueOtherNodeStatuses = {}  # set of unique statuses from other nodes (all nodes except this one). indexed by IP address
 DIRECTORY = "/home/pi/ReceivedProcesses/"  # directory to store processes that are received from other nodes
-ADC_Values = tuple([0, 0]) * 5  # Store ADC values to smooth  using a moving average
+ADC_Values = [(0,0)] * 5  # Store ADC values to smooth  using a moving average
 
 
 class Process:
@@ -186,6 +187,7 @@ def getMigrateCMD(forceMigrate=False) -> bool:
         selfState["migrate_cmd"] = False
         return True
     if os.path.exists("/home/pi/force_migrate.txt"):
+        os.delete("/home/pi/force_migrate.txt")
         return True
     return False
 
@@ -277,12 +279,12 @@ def checkpointAndMigrateProcessToNode(proc: Process, receivingIP: IPv4Address):
     total_time_ms = delete_time_ms-start_time_ms
     with open("/home/pi/migrate_stats.txt", "w") as f:
         f.write(f"Time: {time.time()}")
-        f.write(f"Migration took total of {total_time_ms} ms")
-        f.write(f"{'Dumping':<15} {dump_time_ms-start_time_ms:2.0f} ms {'-'*int((dump_time_ms-start_time_ms)/total_time_ms*bar_width)}")
-        f.write(f"{'IP alias (rem)':<15} {alias_time_ms-dump_time_ms:2.0f} ms {'-'*int((alias_time_ms-dump_time_ms)/total_time_ms*bar_width)}")
-        f.write(f"{'Rsyncing':<15} {rsync_time_ms-alias_time_ms:2.0f} ms {'-'*int((rsync_time_ms-alias_time_ms)/total_time_ms*bar_width)}")
-        f.write(f"{'Finish flag':<15} {flag_time_ms-rsync_time_ms:2.0f} ms {'-'*int((flag_time_ms-rsync_time_ms)/total_time_ms*bar_width)}")
-        f.write(f"{'Deleting':<15} {delete_time_ms-flag_time_ms:2.0f} ms {'-'*int((delete_time_ms-flag_time_ms)/total_time_ms*bar_width)}")
+        f.write(f"Migration took total of {total_time_ms} ms\n")
+        f.write(f"{'Dumping':<15} {dump_time_ms-start_time_ms:2.0f} ms {'-'*int((dump_time_ms-start_time_ms)/total_time_ms*bar_width)}\n")
+        f.write(f"{'IP alias (rem)':<15} {alias_time_ms-dump_time_ms:2.0f} ms {'-'*int((alias_time_ms-dump_time_ms)/total_time_ms*bar_width)}\n")
+        f.write(f"{'Rsyncing':<15} {rsync_time_ms-alias_time_ms:2.0f} ms {'-'*int((rsync_time_ms-alias_time_ms)/total_time_ms*bar_width)}\n")
+        f.write(f"{'Finish flag':<15} {flag_time_ms-rsync_time_ms:2.0f} ms {'-'*int((flag_time_ms-rsync_time_ms)/total_time_ms*bar_width)}\n")
+        f.write(f"{'Deleting':<15} {delete_time_ms-flag_time_ms:2.0f} ms {'-'*int((delete_time_ms-flag_time_ms)/total_time_ms*bar_width)}\n")
 
     proc = None  # remove the process from memory after it has been migrated
     return True
