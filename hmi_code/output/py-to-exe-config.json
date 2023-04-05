@@ -7,7 +7,7 @@
   },
   {
    "optionDest": "filenames",
-   "value": ""
+   "value": "C:/Users/Saksham/Documents/Classwork/MDE/hmi_code/frontend.py"
   },
   {
    "optionDest": "onefile",
@@ -68,6 +68,18 @@
   {
    "optionDest": "datas",
    "value": "C:/Users/Saksham/Documents/Classwork/MDE/hmi_code/images;images/"
+  },
+  {
+   "optionDest": "pathex",
+   "value": "C:/Users/Saksham/Documents/Classwork/MDE/hmi_code/images"
+  },
+  {
+   "optionDest": "pathex",
+   "value": "C:/Users/Saksham/Documents/Classwork/MDE/hmi_code/images"
+  },
+  {
+   "optionDest": "pathex",
+   "value": "C:/Users/Saksham/AppData/Roaming/Python/Python311/site-packages/pywin32_system32"
   }
  ],
  "nonPyinstallerOptions": {
