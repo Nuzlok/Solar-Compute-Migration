@@ -9,7 +9,6 @@ import time
 from enum import Enum, auto
 from ipaddress import IPv4Address
 import netifaces
-from numpy import delete
 import pexpect
 from statistics import mean
 import RPi.GPIO  # ensure pin factory is set to RPi.GPIO
@@ -187,7 +186,7 @@ def getMigrateCMD(forceMigrate=False) -> bool:
         selfState["migrate_cmd"] = False
         return True
     if os.path.exists("/home/pi/force_migrate.txt"):
-        os.delete("/home/pi/force_migrate.txt")
+        os.system("rm -rf /home/pi/force_migrate.txt")
         return True
     return False
 
