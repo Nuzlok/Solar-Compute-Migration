@@ -42,7 +42,7 @@ class ProcessState(Enum):
 selfState = {"ip": "", "status": "online", "state": NodeState.IDLE, "current": 0, "voltage": 0, "manual": False, "migrate_cmd": False, "reboot_cmd": False, "shutdown_cmd": False}
 uniqueOtherNodeStatuses = {}  # set of unique statuses from other nodes (all nodes except this one). indexed by IP address
 DIRECTORY = "/home/pi/ReceivedProcesses/"  # directory to store processes that are received from other nodes
-ADC_Values = [tuple(0, 0),] * 5  # Store ADC values to smooth  using a moving average
+ADC_Values = tuple([0, 0]) * 5  # Store ADC values to smooth  using a moving average
 
 
 class Process:
@@ -350,6 +350,8 @@ def MainFSM(process: Process):
 
     if useADC: 
         print(f"{(55*voltage.value) :=.5f}, state={selfState['state']}, Press Ctrl-C to exit")
+    else:
+        print(f"ADC READING DISABLED, state={selfState['state']}, Press Ctrl-C to exit")
     
 
     # TODO: improve the logic here, it is a bit messy. maybe use draw a state diagram to help visualize it
@@ -397,8 +399,9 @@ def main():
 
     try:
         # https://gpiozero.readthedocs.io/en/stable/api_input.html#mcp3008
-        voltage = MCP3008(channel=2, differential=False, max_voltage=5)  # single ended on channel 2
-        current = MCP3008(channel=1, differential=True, max_voltage=5)  # differential on channel 1 and 0, might need to change to pin 0 if output is inverted
+        if useADC:
+            voltage = MCP3008(channel=2, differential=False, max_voltage=5)  # single ended on channel 2
+            current = MCP3008(channel=1, differential=True, max_voltage=5)  # differential on channel 1 and 0, might need to change to pin 0 if output is inverted
         broadcaster = BroadcastSender()  # Start broadcast sender and receiver threads
         broadcaster.start()
         receiver = BroadcastReceiver()
