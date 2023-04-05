@@ -442,8 +442,12 @@ class BroadcastSender(threading.Thread):
         while self._running:
             # ran = random.randrange(139, 143, 1)
             # selfState["ip"] = f"192.168.137.{ran}"  # this is temporary for testing. will be replaced with actual ip when we have a network-------------
-            selfState["voltage"] = voltage.value
-            selfState["current"] = current.value
+            if not useADC:
+                selfState["voltage"] = 0
+                selfState["current"] = 0
+            else:
+                selfState["voltage"] = voltage.value
+                selfState["current"] = current.value
             self.socket.sendto(pickle.dumps(selfState), (self.baddress, self.port))
             time.sleep(self.send_delay)
             # print(f"broadcasting state {selfState['ip']}")
