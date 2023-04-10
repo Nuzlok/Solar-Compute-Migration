@@ -13,7 +13,7 @@ import pexpect
 from statistics import mean
 import RPi.GPIO  # ensure pin factory is set to RPi.GPIO
 import spidev  # only for gpio pins on raspberry pi
-from gpiozero import MCP3008
+from gpiozero import MCP3008, LEDBoard, PWMLED
 
 
 class NodeState(Enum):
@@ -43,7 +43,10 @@ selfState = {"ip": "", "status": "online", "state": NodeState.IDLE, "current": 0
 uniqueOtherNodeStatuses = {}  # set of unique statuses from other nodes (all nodes except this one). indexed by IP address
 DIRECTORY = "/home/pi/ReceivedProcesses/"  # directory to store processes that are received from other nodes
 ADC_Values = [(0,0)] * 5  # Store ADC values to smooth  using a moving average
-
+led_4 = PWMLED(4)  # LED on pin 4
+led_17 = PWMLED(17)  # LED on pin 17
+led_27 = PWMLED(27)  # LED on pin 27
+led_22 = PWMLED(22)  # LED on pin 22
 
 class Process:
     # TODO: convert to a dataclass instead of a normal class. This will make the code more readable and easier to use
@@ -258,6 +261,10 @@ def checkpointAndMigrateProcessToNode(proc: Process, receivingIP: IPv4Address):
     print("IP alias removed from current node")
     alias_time_ms = int(time.time()*1000)
 
+    if receivingIP == None:
+        os.system("touch /home/pi/cpflag.txt")
+        return True
+
     if rsyncProcessToNode(proc, receivingIP) == False:
         raise Exception("Failed to rsync process to receiving node, process may be incomplete")
     print("Process rsynced to receiving node")
@@ -356,7 +363,32 @@ def MainFSM(process: Process):
     
 
     # TODO: improve the logic here, it is a bit messy. maybe use draw a state diagram to help visualize it
-
+    # ------------------ Change LEDs ------------------
+    
+    if selfState["state"] == NodeState.IDLE:
+        led_4.value = 1.0
+        
+        led_17.value = 0.0
+        led_22.value = 0.0
+        led_27.value = 0.0
+    if selfState["state"] == NodeState.BUSY:
+        led_17.value = 1.0
+        led_4.value = 0.0
+    
+        led_22.value = 0.0
+        led_27.value = 0.0
+    if selfState["state"] == NodeState.MIGRATING:
+        led_22.value = 1.0
+        led_4.value = 0.0
+        led_17.value = 0.0
+    
+        led_27.value = 0.0
+    if selfState["state"] == NodeState.SHUTDOWN:
+        led_27.value = 1.0
+        led_4.value = 0.0
+        led_17.value = 0.0
+        led_22.value = 0.0
+    
     # ------------------ Change State ------------------
     if selfState["state"] != NodeState.SHUTDOWN:
         if isLossOfPower() or getMigrateCMD():
@@ -381,8 +413,7 @@ def MainFSM(process: Process):
             selfState["state"] = NodeState.IDLE
 
     if selfState["state"] == NodeState.MIGRATING:
-        if found_ip := findAvailableNode():
-            checkpointAndMigrateProcessToNode(process, found_ip)
+        checkpointAndMigrateProcessToNode(process, findAvailableNode())
         selfState["state"] = NodeState.SHUTDOWN
 
     if selfState["state"] == NodeState.SHUTDOWN:

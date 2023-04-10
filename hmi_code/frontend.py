@@ -203,7 +203,7 @@ class NodeSelectionWidget(QWidget):
         super().__init__(parent=parent)
 
         self.combo_box = QComboBox()
-        self.combo_box.addItems(["Select a Node", "139", "140", "141", "142"])
+        self.combo_box.addItems(["Select a Node", "139", "140", "141", "142", "143"])
         self.combo_box.currentIndexChanged.connect(self.combo_box_index_changed)
 
         # self.refreshButton = RefreshWidget(parent=self)
