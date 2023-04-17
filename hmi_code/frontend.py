@@ -97,6 +97,11 @@ class asyncWorker(QThread):
                     vol, cur = float(PACKET['voltage']), float(PACKET['current'])
                     mWindow.powerWidget.power.setText(f"{(5*vol):=.2f} V  *  {cur:=.2f} A  =  {(5*vol*cur) := .2f} W")
                     mWindow.stateText.setText(str(PACKET['state']))
+                    mWindow.manualButtons.shutdownBut.setText("Shutdown" if PACKET['state'] != NodeState.SHUTDOWN else "Switch to IDLE")
+                    if PACKET['state'] != NodeState.IDLE and PACKET['state'] != NodeState.SHUTDOWN:
+                        mWindow.manualButtons.shutdownBut.setEnabled(False)
+                    else:
+                        mWindow.manualButtons.shutdownBut.setEnabled(True)
                     if DEBUG:
                         print(f"State for Node {CURRENTLY_SELECTED} is {PACKET}")
             except socket.timeout:
@@ -123,7 +128,7 @@ class PowerWidget(QWidget):
         self.layout.addWidget(self.power, 1)
         self.setLayout(self.layout)
 
-
+"""
 # class RefreshWidget(QWidget):
 #     def __init__(self, parent=None, size=20):
 #         super().__init__(parent=parent)
@@ -137,7 +142,7 @@ class PowerWidget(QWidget):
 #         self.refresh_button.clicked.connect(self.play_gif)
 #
 #     def refreshNodesList(self) -> None:
-#         """
+#         \"\"\"
 #         # global nodeIPs
 #         # nodeIPs = []
 #
@@ -158,7 +163,7 @@ class PowerWidget(QWidget):
 #         #     nodeIPs.remove(selfIP)  # removing my own ip from the list
 #         # if gateIP in nodeIPs:
 #         #     nodeIPs.remove(gateIP)  # removing gateway ip from the list
-#         """
+#         \"\"\"
 #         pass
 #
 #     def play_gif(self):
@@ -170,7 +175,7 @@ class PowerWidget(QWidget):
 #
 #     def update_refresh_icon(self):
 #         self.refresh_button.setIcon(self.refresh_gif.currentPixmap())
-
+"""
 
 class ManualModeWidget(QWidget):
     def __init__(self, parent=None):
@@ -270,7 +275,7 @@ class ManualButtonsWidget(QWidget):
         self.layout.addWidget(self.takeNewPBut, 0, 1)
         self.layout.addWidget(self.saveProcBut, 1, 0)
         self.layout.addWidget(self.shutdownBut, 1, 1)
-
+        
         # set the button actions
         self.transferBut.clicked.connect(lambda: self.migrate(f"192.168.137.{CURRENTLY_SELECTED}"))
         self.takeNewPBut.clicked.connect(lambda: self.takeNew(f"192.168.137.{CURRENTLY_SELECTED}"))
@@ -303,15 +308,19 @@ class ManualButtonsWidget(QWidget):
         self.command(f'touch /home/{user}/force_dump.txt', selected_ip, user, password)
 
     def shutdown(self, selected_ip, user="pi", password="pi"):
-        command = 'sudo -S shutdown now'
-        print(f"ssh {user}@{selected_ip} '{command}'")
-        child = wexpect.spawn(f"ssh {user}@{selected_ip} {command}", timeout=30)
-        child.expect([f"{user}@{selected_ip}'s password:"], timeout=5)
-        child.sendline(password)
-        child.expect([f"\[sudo\] password for {user}:"], timeout=5)
-        child.sendline(password)
-
+        # command = 'sudo -S shutdown now'
+        # print(f"ssh {user}@{selected_ip} '{command}'")
+        # child = wexpect.spawn(f"ssh {user}@{selected_ip} {command}", timeout=30)
+        # child.expect([f"{user}@{selected_ip}'s password:"], timeout=5)
+        # child.sendline(password)
+        # child.expect([f"\[sudo\] password for {user}:"], timeout=5)
+        # child.sendline(password)
         # child.expect(wexpect.EOF)
+        if self.shutdownBut.text() == "Shutdown":
+            self.command(f'touch /home/{user}/force_shutdown.txt', selected_ip, user, password)
+        else:
+            self.command(f'touch /home/{user}/force_idle.txt', selected_ip, user, password)
+        
 
     def command(self, command, selected_ip, user, password):
         print(f"ssh {user}@{selected_ip} '{command}'")

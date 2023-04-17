@@ -360,7 +360,15 @@ def MainFSM(process: Process):
         print(f"{(55*voltage.value) :=.5f}, state={selfState['state']}, Press Ctrl-C to exit")
     else:
         print(f"ADC READING DISABLED, state={selfState['state']}, Press Ctrl-C to exit")
-    
+
+
+    # ------------------ Change State ------------------
+    if selfState["state"] != NodeState.SHUTDOWN:
+        if isLossOfPower() or getMigrateCMD():
+            selfState["state"] = NodeState.MIGRATING
+        elif isLossOfPower(vThresh=4.0):
+            selfState["state"] = NodeState.SHUTDOWN
+
 
     # TODO: improve the logic here, it is a bit messy. maybe use draw a state diagram to help visualize it
     # ------------------ Change LEDs ------------------
@@ -386,12 +394,7 @@ def MainFSM(process: Process):
         led_17.value = 0.0
         led_22.value = 0.0
     
-    # ------------------ Change State ------------------
-    if selfState["state"] != NodeState.SHUTDOWN:
-        if isLossOfPower() or getMigrateCMD():
-            selfState["state"] = NodeState.MIGRATING
-        elif isLossOfPower(vThresh=4.0):
-            selfState["state"] = NodeState.SHUTDOWN
+    
 
     # ------------------ Execute State ------------------
     if selfState["state"] == NodeState.IDLE:
