@@ -38,7 +38,7 @@ class ProcessState(Enum):
     def __str__(self):
         return self.name
 
-
+# FIXME some of the state variables are not used. Remove them
 selfState = {"ip": "", "status": "online", "state": NodeState.IDLE, "current": 0, "voltage": 0, "manual": False, "migrate_cmd": False, "reboot_cmd": False, "shutdown_cmd": False}
 uniqueOtherNodeStatuses = {}  # set of unique statuses from other nodes (all nodes except this one). indexed by IP address
 DIRECTORY = "/home/pi/ReceivedProcesses/"  # directory to store processes that are received from other nodes
@@ -367,21 +367,18 @@ def MainFSM(process: Process):
     
     if selfState["state"] == NodeState.IDLE:
         led_4.value = 1.0
-        
         led_17.value = 0.0
         led_22.value = 0.0
         led_27.value = 0.0
     if selfState["state"] == NodeState.BUSY:
         led_17.value = 1.0
         led_4.value = 0.0
-    
         led_22.value = 0.0
         led_27.value = 0.0
     if selfState["state"] == NodeState.MIGRATING:
         led_22.value = 1.0
         led_4.value = 0.0
         led_17.value = 0.0
-    
         led_27.value = 0.0
     if selfState["state"] == NodeState.SHUTDOWN:
         led_27.value = 1.0
@@ -404,8 +401,10 @@ def MainFSM(process: Process):
             if process.start() == False:
                 raise RuntimeError("Failed to start process thread. Process not started.")
             selfState["state"] = NodeState.BUSY
-        #   if process.restore() == False:
-        #       raise RuntimeError("Failed to start process thread. Process not started.")
+        else:
+            if os.path.exists("/home/pi/force_shutdown.txt"):
+                os.system("sudo rm -rf /home/pi/force_shutdown.txt")
+                selfState["state"] = NodeState.SHUTDOWN
 
     if selfState["state"] == NodeState.BUSY:
         if process.procState == ProcessState.COMPLETED:
@@ -417,8 +416,9 @@ def MainFSM(process: Process):
         selfState["state"] = NodeState.SHUTDOWN
 
     if selfState["state"] == NodeState.SHUTDOWN:
-        # raise Exception("Shutdown command received")
-        pass
+        if os.path.exists("/home/pi/force_idle.txt"):
+            os.system("sudo rm -rf /home/pi/force_idle.txt")
+            selfState["state"] = NodeState.IDLE
 
     return process
 
