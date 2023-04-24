@@ -40,18 +40,18 @@ class ProcessState(Enum):
 
 # FIXME some of the state variables are not used. Remove them
 selfState = {"ip": "", "status": "online", "state": NodeState.IDLE, "current": 0, "voltage": 0, "manual": False, "migrate_cmd": False, "reboot_cmd": False, "shutdown_cmd": False}
-uniqueOtherNodeStatuses = {}  # set of unique statuses from other nodes (all nodes except this one). indexed by IP address
-DIRECTORY = "/home/pi/ReceivedProcesses/"  # directory to store processes that are received from other nodes
+uniqueOtherNodeStatuses = {}  # set of unique statuses from other nodes (all nodes except this one). key is IP address, value is status
+DIRECTORY = "/home/pi/ReceivedProcesses/"  # directory to store processes that are received from other nodes (Currently not used)
 ADC_Values = [(0,0)] * 5  # Store ADC values to smooth  using a moving average
-led_4 = PWMLED(4)  # LED on pin 4
+led_4 = PWMLED(4)  # LED on pin 4 (These LEDs are to show the status of the node during Expo)
 led_17 = PWMLED(17)  # LED on pin 17
 led_27 = PWMLED(27)  # LED on pin 27
 led_22 = PWMLED(22)  # LED on pin 22
 
 class Process:
-    # TODO: convert to a dataclass instead of a normal class. This will make the code more readable and easier to use
     """
     Contains all the information about a process and provides functions to start, stop, and terminate the process.
+    TODO: convert to a dataclass instead of a normal class. This will make the code more readable and easier to use
     """
 
     def __init__(self, name: str, location=None, aliasIP=None):
@@ -120,6 +120,7 @@ class Process:
         if not os.system(command) == 0:  # 0 means success
             return False
 
+        # TODO: get the PID of the process after it is restored (Does not work for unknown reason)
         # time.sleep(10)
         # result = subprocess.run(['ps', 'ax'], stdout=subprocess.PIPE).stdout
         # result = subprocess.run(['grep', f'{execName}'], input=result, stdout=subprocess.PIPE).stdout.decode().split()[0]  # TODO: use the arbitrary process name instead of hardcoding it
@@ -139,6 +140,8 @@ class Process:
         procname = "videoboard"
         execName = "vidboardmain.py"
         os.chdir(f'/home/pi/{procname}')
+
+        # Delete any preexisting dump files in the directory (This is to prevent multiple dumps files interfeering)
         os.system("rm -rf core* fs* ids* invent* mm-* pagemap* pages* pstree* seccomp* stats* tcp* timens* tty* files* fdinfo* nohup.out dump.log restore.log flag.txt")
         print(f"Dumping {self}")
 
@@ -297,7 +300,7 @@ def checkpointAndMigrateProcessToNode(proc: Process, receivingIP: IPv4Address):
 
 
 def rsyncProcessToNode(proc: Process, ip: IPv4Address, password="pi", username="pi"):
-    """rsync dumped files to receiving node"""
+    """rsync/scp dumped files to receiving node"""
     # spawn rsync -avz /home/pi/{proc.getDirectory()} pi@{ip}:{DIRECTORY}
     procname = "videoboard"
 
@@ -369,8 +372,6 @@ def MainFSM(process: Process):
         elif isLossOfPower(vThresh=4.0):
             selfState["state"] = NodeState.SHUTDOWN
 
-
-    # TODO: improve the logic here, it is a bit messy. maybe use draw a state diagram to help visualize it
     # ------------------ Change LEDs ------------------
     
     if selfState["state"] == NodeState.IDLE:
@@ -395,7 +396,7 @@ def MainFSM(process: Process):
         led_22.value = 0.0
     
     
-
+    # TODO: improve the logic here, it is a bit messy. maybe use draw a state diagram to help visualize it
     # ------------------ Execute State ------------------
     if selfState["state"] == NodeState.IDLE:
         process = getNewProcess()
