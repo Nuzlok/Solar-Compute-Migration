@@ -1,10 +1,15 @@
+#TODO: Should not import "*". This is bad practice. Only import what you need
 from PySide6.QtCore import *
 from PySide6.QtGui import *
 from PySide6.QtWidgets import *
 
 
 class QToggleSwitch(QCheckBox):
-    """ A custom toggle switch widget. Modified version of: https://www.youtube.com/watch?v=NnJFi285s3M"""
+    """
+    A custom toggle switch widget. Modified version of: https://www.youtube.com/watch?v=NnJFi285s3M
+    This whole thing is just a wrapper around a QCheckBox. It just adds some custom styling and animations.
+    But, it operates exactly like a QCheckBox.
+    """
 
     def __init__(self, width=60, color="#777", circle_color="#DDD",  active_color="#599afe", duration=200, parent=None):
         super().__init__(parent=parent)

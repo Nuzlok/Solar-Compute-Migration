@@ -3,17 +3,18 @@ import socket
 import sys
 import time
 from enum import Enum, auto
-from ipaddress import IPv4Address
+from ipaddress import IPv4Address # TODO: use this to validate IP addresses and make displaying them easier
 import wexpect
 
+#TODO: Should not import "*". This is bad practice. Only import what you need
 from customWidgets import *
 from PySide6.QtCore import *
 from PySide6.QtGui import *
 from PySide6.QtWidgets import *
 
-CURRENTLY_SELECTED = 'x'
-DEBUG = True
-nodeStatuses = {}
+CURRENTLY_SELECTED = 'x' # Holds the IP address of the currently selected node
+DEBUG = True # Set to True to enable debug messages
+nodeStatuses = {} # Holds the status of all nodes in the network using the format {"ip": (status_info, time_last_updated)}
 
 
 class NodeState(Enum):
@@ -59,13 +60,13 @@ class MainWindow(QMainWindow):
         self.layoutWidget.setLayout(self.layout)
         self.setCentralWidget(self.layoutWidget)
 
-        self.worker = asyncWorker()
+        self.worker = asyncWorker() # Create the worker thread to listen for incoming packets
         self.worker.start()
 
     def closeEvent(self, event) -> None:
-        self.worker.stop()
+        self.worker.stop() # Stop the worker thread before closing the window
         self.worker.wait(deadline=500)
-        return super().closeEvent(event)
+        return super().closeEvent(event) # Close the window
 
 
 class asyncWorker(QThread):
@@ -76,7 +77,7 @@ class asyncWorker(QThread):
         self._running = True
 
     def stop(self):
-        self._running = False
+        self._running = False # sentinal value to stop the thread
 
     def run(self, listenPort=12345, sockSize=512):
         global CURRENTLY_SELECTED, nodeStatuses
@@ -86,30 +87,30 @@ class asyncWorker(QThread):
         sock.bind(('', listenPort))  # Listen on all interfaces on port 12345 for broadcast packets
         self._running = True
 
-        while self._running:
+        while self._running: # Loop until the thread is stopped using the sentinal value
             try:
                 PACKET = pickle.loads(sock.recvfrom(sockSize)[0])
 
-                nodeStatuses[PACKET['ip']] = PACKET, time.time()
+                nodeStatuses[PACKET['ip']] = PACKET, time.time() # Update the status of the node in the dictionary
 
                 if CURRENTLY_SELECTED in PACKET['ip']:  # TODO: Fix this if statement (if the packet is from the currently selected node). This is a hacky way to do it
                     mWindow.nodeSelector.address.setText(PACKET['ip'])
                     vol, cur = float(PACKET['voltage']), float(PACKET['current'])
-                    mWindow.powerWidget.power.setText(f"{(5*vol):=.2f} V  *  {cur:=.2f} A  =  {(5*vol*cur) := .2f} W")
+                    mWindow.powerWidget.power.setText(f"{(5*vol):=.2f} V  *  {cur:=.2f} A  =  {(5*vol*cur) := .2f} W") # Calculate the power and display it
                     mWindow.stateText.setText(str(PACKET['state']))
-                    mWindow.manualButtons.shutdownBut.setText("Shutdown" if PACKET['state'] != NodeState.SHUTDOWN else "Switch to IDLE")
+                    mWindow.manualButtons.shutdownBut.setText("Shutdown" if PACKET['state'] != NodeState.SHUTDOWN else "Switch to IDLE") # TODO: Has some bugs.
                     if PACKET['state'] != NodeState.IDLE and PACKET['state'] != NodeState.SHUTDOWN:
-                        mWindow.manualButtons.shutdownBut.setEnabled(False)
+                        mWindow.manualButtons.shutdownBut.setEnabled(False) # Disable the shutdown button if the node is busy or migrating
                     else:
-                        mWindow.manualButtons.shutdownBut.setEnabled(True)
+                        mWindow.manualButtons.shutdownBut.setEnabled(True) # Enable the button if the node is idle or shutting down
                     if DEBUG:
                         print(f"State for Node {CURRENTLY_SELECTED} is {PACKET}")
             except socket.timeout:
-                pass
+                pass # Ignore timeouts and continue
             except Exception as e:
                 print(e)
                 pass
-        sock.close()
+        sock.close() # Close the socket when the thread is stopped
 
 
 class PowerWidget(QWidget):
@@ -129,52 +130,54 @@ class PowerWidget(QWidget):
         self.setLayout(self.layout)
 
 """
-# class RefreshWidget(QWidget):
-#     def __init__(self, parent=None, size=20):
-#         super().__init__(parent=parent)
-#
-#         self.refresh_button = QPushButton(icon=QIcon('images/refresh.png'), parent=self)
-#         self.refresh_button.setIconSize(QSize(size, size))
-#         # self.button.clicked.connect(self.refreshNodesList)# FIX THE FUNCTION FIRST
-#
-#         self.refresh_gif = QMovie("images/refresh.gif")
-#         self.refresh_gif.frameChanged.connect(self.update_refresh_icon)
-#         self.refresh_button.clicked.connect(self.play_gif)
-#
-#     def refreshNodesList(self) -> None:
-#         \"\"\"
-#         # global nodeIPs
-#         # nodeIPs = []
-#
-#         # # -------------------- change so it works in any situation. currently only works when connected to nodes directly on ethernet --------------------
-#         # # -------------------- if any other devices is connected to the network, it will be added to the list when it should not --------------------
-#         # # -------------------- could be fixed by passively listening for broadcast messages instead. but this way you cant choose offline nodes  ---------
-#
-#         # output = subprocess.run(['ip', 'route'], capture_output=True, text=True).stdout.splitlines()
-#         # gateIP = output[0].split(' ')[2]  # get the gateway ip of the current network
-#         # cidr = output[1].split(' ')[0]  # get the cidr of the current network
-#
-#         # lines = subprocess.run(['sudo', 'arp-scan', cidr, '-x', '-q', '-g'], capture_output=True, text=True).stdout.splitlines()
-#         # for line in lines:  # for every found node in the network
-#         #     nodeIPs.append(line.split('\t')[0])  # add the ip of that node to the list
-#         # print(nodeIPs)
-#
-#         # if selfIP in nodeIPs:
-#         #     nodeIPs.remove(selfIP)  # removing my own ip from the list
-#         # if gateIP in nodeIPs:
-#         #     nodeIPs.remove(gateIP)  # removing gateway ip from the list
-#         \"\"\"
-#         pass
-#
-#     def play_gif(self):
-#         if self.refresh_gif.state() == QMovie.Running:
-#             self.refresh_gif.stop()
-#             self.refresh_button.setIcon(QPixmap("images/refresh.png"))
-#         else:
-#             self.refresh_gif.start()
-#
-#     def update_refresh_icon(self):
-#         self.refresh_button.setIcon(self.refresh_gif.currentPixmap())
+class RefreshWidget(QWidget):
+    # This class is used to create a refresh button that will refresh the list of nodes on the network
+    def __init__(self, parent=None, size=20):
+        super().__init__(parent=parent)
+
+        self.refresh_button = QPushButton(icon=QIcon('images/refresh.png'), parent=self)
+        self.refresh_button.setIconSize(QSize(size, size))
+        # self.button.clicked.connect(self.refreshNodesList) # FIX THE FUNCTION FIRST
+
+        self.refresh_gif = QMovie("images/refresh.gif")
+        self.refresh_gif.frameChanged.connect(self.update_refresh_icon)
+        self.refresh_button.clicked.connect(self.play_gif)
+
+    def refreshNodesList(self) -> None:
+        # This function is used to refresh the list of nodes on the network
+        \"\"\"
+        # global nodeIPs
+        # nodeIPs = []
+
+        # # -------------------- change so it works in any situation. currently only works when connected to nodes directly on ethernet --------------------
+        # # -------------------- if any other devices is connected to the network, it will be added to the list when it should not --------------------
+        # # -------------------- could be fixed by passively listening for broadcast messages instead. but this way you cant choose offline nodes  ---------
+
+        # output = subprocess.run(['ip', 'route'], capture_output=True, text=True).stdout.splitlines()
+        # gateIP = output[0].split(' ')[2]  # get the gateway ip of the current network
+        # cidr = output[1].split(' ')[0]  # get the cidr of the current network
+
+        # lines = subprocess.run(['sudo', 'arp-scan', cidr, '-x', '-q', '-g'], capture_output=True, text=True).stdout.splitlines()
+        # for line in lines:  # for every found node in the network
+        #     nodeIPs.append(line.split('\t')[0])  # add the ip of that node to the list
+        # print(nodeIPs)
+
+        # if selfIP in nodeIPs:
+        #     nodeIPs.remove(selfIP)  # removing my own ip from the list
+        # if gateIP in nodeIPs:
+        #     nodeIPs.remove(gateIP)  # removing gateway ip from the list
+        \"\"\"
+        pass
+
+    def play_gif(self):
+        if self.refresh_gif.state() == QMovie.Running:
+            self.refresh_gif.stop()
+            self.refresh_button.setIcon(QPixmap("images/refresh.png"))
+        else:
+            self.refresh_gif.start()
+
+    def update_refresh_icon(self):
+        self.refresh_button.setIcon(self.refresh_gif.currentPixmap())
 """
 
 class ManualModeWidget(QWidget):
@@ -182,7 +185,7 @@ class ManualModeWidget(QWidget):
         super().__init__(parent=parent)
         self.label = QLabel("Manual Mode: ")
 
-        self.check = QToggleSwitch(parent=self)
+        self.check = QToggleSwitch(parent=self) # Add the custom toggle switch
         self.check.toggled.connect(self.on_toggled)
         self.check.setChecked(False)
         self.check.setEnabled(False)
@@ -208,7 +211,7 @@ class NodeSelectionWidget(QWidget):
         super().__init__(parent=parent)
 
         self.combo_box = QComboBox()
-        self.combo_box.addItems(["Select a Node", "139", "140", "141", "142", "143"])
+        self.combo_box.addItems(["Select a Node", "139", "140", "141", "142", "143"]) # TODO: change to dynamic list based on nodes on the network using the refresh button
         self.combo_box.currentIndexChanged.connect(self.combo_box_index_changed)
 
         # self.refreshButton = RefreshWidget(parent=self)
@@ -332,7 +335,7 @@ class ManualButtonsWidget(QWidget):
 
 if __name__ == '__main__':
     if 'darkmode' in sys.argv:
-        sys.argv += ['-platform', 'windows:darkmode=2']
+        sys.argv += ['-platform', 'windows:darkmode=2'] # allow dark mode on windows. not sure how to do this on other OSes
     app = QApplication(sys.argv)
     mWindow = MainWindow()
     mWindow.show()
